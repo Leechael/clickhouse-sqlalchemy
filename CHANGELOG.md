@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+### Fixed
+- [asynch] SQLAlchemy 2.0.44+ compatibility: implement async cursor soft close hook (`_async_soft_close`). Solves issue [#393](https://github.com/xzkostyan/clickhouse-sqlalchemy/issues/393).
 
 ## [0.3.2] - 2024-06-12
 ### Added
