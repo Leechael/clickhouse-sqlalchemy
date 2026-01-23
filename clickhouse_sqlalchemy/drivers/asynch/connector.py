@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 
 from sqlalchemy.engine.interfaces import AdaptedConnection
 from sqlalchemy.util.concurrency import await_only
@@ -48,10 +49,29 @@ class AsyncAdapt_asynch_cursor:
         return self._cursor.lastrowid
 
     def close(self):
-        # note we aren't actually closing the cursor here,
-        # we are just letting GC do it.   to allow this to be async
-        # we would need the Result to change how it does "Safe close cursor".
         self._rows[:] = []  # noqa
+        try:
+            self.await_(self._cursor.close())
+        except Exception:
+            pass
+
+    async def _async_soft_close(self) -> None:
+        """Soft close for SQLAlchemy 2.0.44+ compatibility.
+
+        This method closes the cursor but keeps the results pending.
+        See: https://github.com/sqlalchemy/sqlalchemy/commit/2e9902a
+        """
+        # NOTE: Do NOT clear _rows here! The purpose of "soft close" is to
+        # close the cursor while preserving already-fetched results.
+        try:
+            close = getattr(self._cursor, "close", None)
+            if close is None:
+                return
+            result = close()
+            if inspect.isawaitable(result):
+                await result
+        except Exception:
+            pass
 
     def execute(self, operation, params=None, context=None):
         return self.await_(self._execute_async(operation, params, context))
