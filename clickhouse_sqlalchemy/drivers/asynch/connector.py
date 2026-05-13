@@ -187,19 +187,53 @@ class AsyncAdapt_asynch_connection(AdaptedConnection):
             return await self._connection.ping()
 
     def character_set_name(self):
-        return self._connection.character_set_name()
+        character_set_name = getattr(
+            self._connection, 'character_set_name', None
+        )
+        if character_set_name is None:
+            return None
+
+        return character_set_name()
 
     def autocommit(self, value):
-        self.await_(self._connection.autocommit(value))
+        autocommit = getattr(self._connection, 'autocommit', None)
+        if autocommit is None:
+            return None
+
+        result = autocommit(value)
+        if inspect.isawaitable(result):
+            return self.await_(result)
+        return result
 
     def cursor(self, server_side=False):
         return AsyncAdapt_asynch_cursor(self)
 
     def rollback(self):
-        self.await_(self._connection.rollback())
+        self.await_(self._rollback_async())
+
+    async def _rollback_async(self):
+        try:
+            result = self._connection.rollback()
+            if inspect.isawaitable(result):
+                return await result
+            return result
+        except self.dbapi.NotSupportedError:
+            return None
 
     def commit(self):
-        self.await_(self._connection.commit())
+        self.await_(self._commit_async())
+
+    async def _commit_async(self):
+        try:
+            result = self._connection.commit()
+            if inspect.isawaitable(result):
+                return await result
+            return result
+        except self.dbapi.NotSupportedError:
+            return None
 
     def close(self):
-        self.await_(self._connection.close())
+        result = self._connection.close()
+        if inspect.isawaitable(result):
+            return self.await_(result)
+        return result
