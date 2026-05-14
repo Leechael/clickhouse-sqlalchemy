@@ -479,9 +479,42 @@ class ClickHouseDialect(default.DefaultDialect):
         )
         return {'text': comment or None}
 
+    def get_isolation_level_values(self, dbapi_connection):
+        return ['AUTOCOMMIT']
+
+    def get_default_isolation_level(self, dbapi_connection):
+        return 'AUTOCOMMIT'
+
+    def get_isolation_level(self, dbapi_connection):
+        return 'AUTOCOMMIT'
+
+    def set_isolation_level(self, dbapi_connection, level):
+        # ClickHouse has no regular transactional isolation levels.
+        pass
+
+    def detect_autocommit_setting(self, dbapi_connection):
+        return True
+
+    def do_begin(self, dbapi_connection):
+        # SQLAlchemy keeps a transaction lifecycle even in autocommit mode.
+        pass
+
+    def do_commit(self, dbapi_connection):
+        # ClickHouse statements are committed by the server as they execute.
+        pass
+
     def do_rollback(self, dbapi_connection):
         # No support for transactions.
         pass
+
+    def do_savepoint(self, connection, name):
+        raise NotImplementedError('ClickHouse does not support SAVEPOINT')
+
+    def do_rollback_to_savepoint(self, connection, name):
+        raise NotImplementedError('ClickHouse does not support SAVEPOINT')
+
+    def do_release_savepoint(self, connection, name):
+        raise NotImplementedError('ClickHouse does not support SAVEPOINT')
 
     def do_executemany(self, cursor, statement, parameters, context=None):
         # render single insert inplace
