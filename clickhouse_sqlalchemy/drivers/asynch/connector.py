@@ -11,7 +11,8 @@ class AsyncAdapt_asynch_cursor:
         '_connection',
         'await_',
         '_cursor',
-        '_rows'
+        '_rows',
+        '_soft_closed_memoized',
     )
 
     def __init__(self, adapt_connection):
@@ -23,6 +24,7 @@ class AsyncAdapt_asynch_cursor:
 
         self._cursor = self.await_(cursor.__aenter__())
         self._rows = []
+        self._soft_closed_memoized = {}
 
     @property
     def _execute_mutex(self):
@@ -30,7 +32,10 @@ class AsyncAdapt_asynch_cursor:
 
     @property
     def description(self):
-        return self._cursor.description
+        memoized = getattr(self, '_soft_closed_memoized', {})
+        if 'description' in memoized:
+            return memoized['description']
+        return self._cursor.description or None
 
     @property
     def rowcount(self):
@@ -50,6 +55,8 @@ class AsyncAdapt_asynch_cursor:
 
     def close(self):
         self._rows[:] = []  # noqa
+        if getattr(self, '_soft_closed_memoized', {}):
+            return
         try:
             self.await_(self._cursor.close())
         except Exception:
@@ -67,6 +74,9 @@ class AsyncAdapt_asynch_cursor:
             close = getattr(self._cursor, "close", None)
             if close is None:
                 return
+            self._soft_closed_memoized = {
+                'description': self._cursor.description or None,
+            }
             result = close()
             if inspect.isawaitable(result):
                 await result
@@ -84,7 +94,10 @@ class AsyncAdapt_asynch_cursor:
                 context=context
             )
 
-            self._rows = list(await self._cursor.fetchall())
+            description = self.description
+            self._rows = []
+            if description is not None:
+                self._rows = list(await self._cursor.fetchall())
             return result
 
     def executemany(self, operation, params=None, context=None):
