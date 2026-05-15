@@ -99,7 +99,7 @@ setup(
         'sqlalchemy>=2.0.0,<2.1.0',
         'requests',
         'clickhouse-driver>=0.1.2',
-        'asynch>=0.2.5',
+        'asynch @ git+https://github.com/Leechael/asynch.git@dd0df63',
     ],
     # Registering `clickhouse` as dialect.
     entry_points={
