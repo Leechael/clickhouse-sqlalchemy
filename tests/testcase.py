@@ -156,7 +156,11 @@ class CompilationTestCase(BaseTestCase):
 
     @classmethod
     def setUpClass(cls):
-        super(CompilationTestCase, cls).setUpClass()
+        # Compilation tests only check SQL generation and do not need a
+        # running ClickHouse server.  Skip BaseTestCase.setUpClass which
+        # creates/drops a real database.
+        cls.server_version = (9999, 0, 0)
+        TestCase.setUpClass()
 
         cls._session_connection = cls.session.connection
         cls._session_execute = cls.session.execute
@@ -169,4 +173,4 @@ class CompilationTestCase(BaseTestCase):
         cls.session.execute = cls._session_execute
         cls.session.connection = cls._session_connection
 
-        super(CompilationTestCase, cls).tearDownClass()
+        TestCase.tearDownClass()
