@@ -193,6 +193,82 @@ class Decimal(types.Numeric, ClickHouseTypeEngine):
     __visit_name__ = 'numeric'
 
 
+class Decimal32(Decimal):
+    __visit_name__ = 'decimal32'
+
+    def __init__(self, scale=0, **kw):
+        kw['precision'] = 9
+        super(Decimal32, self).__init__(scale=scale, **kw)
+
+
+class Decimal64(Decimal):
+    __visit_name__ = 'decimal64'
+
+    def __init__(self, scale=0, **kw):
+        kw['precision'] = 18
+        super(Decimal64, self).__init__(scale=scale, **kw)
+
+
+class Decimal128(Decimal):
+    __visit_name__ = 'decimal128'
+
+    def __init__(self, scale=0, **kw):
+        kw['precision'] = 38
+        super(Decimal128, self).__init__(scale=scale, **kw)
+
+
+class Decimal256(Decimal):
+    __visit_name__ = 'decimal256'
+
+    def __init__(self, scale=0, **kw):
+        kw['precision'] = 76
+        super(Decimal256, self).__init__(scale=scale, **kw)
+
+
+class FixedString(String):
+    __visit_name__ = 'fixedstring'
+
+    def __init__(self, length, **kw):
+        self.length = length
+        super(FixedString, self).__init__(length=length, **kw)
+
+
+class IntervalDay(ClickHouseTypeEngine):
+    __visit_name__ = 'intervalday'
+
+
+class IntervalWeek(ClickHouseTypeEngine):
+    __visit_name__ = 'intervalweek'
+
+
+class IntervalMonth(ClickHouseTypeEngine):
+    __visit_name__ = 'intervalmonth'
+
+
+class IntervalYear(ClickHouseTypeEngine):
+    __visit_name__ = 'intervalyear'
+
+
+class IntervalHour(ClickHouseTypeEngine):
+    __visit_name__ = 'intervalhour'
+
+
+class IntervalMinute(ClickHouseTypeEngine):
+    __visit_name__ = 'intervalminute'
+
+
+class IntervalSecond(ClickHouseTypeEngine):
+    __visit_name__ = 'intervalsecond'
+
+
+class Nothing(ClickHouseTypeEngine):
+    __visit_name__ = 'nothing'
+
+
+class Null(ClickHouseTypeEngine):
+    __visit_name__ = 'null'
+
+
 class Tuple(ClickHouseTypeEngine):
     __visit_name__ = 'tuple'
 

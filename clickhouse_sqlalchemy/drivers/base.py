@@ -41,15 +41,28 @@ ischema_names = {
     'Float64': types.Float64,
     'Float32': types.Float32,
     'Decimal': types.Decimal,
+    'Decimal32': types.Decimal32,
+    'Decimal64': types.Decimal64,
+    'Decimal128': types.Decimal128,
+    'Decimal256': types.Decimal256,
     'String': types.String,
+    'FixedString': types.FixedString,
     'Bool': types.Boolean,
     'Boolean': types.Boolean,
     'UUID': types.UUID,
     'IPv4': types.IPv4,
     'IPv6': types.IPv6,
-    'FixedString': types.String,
     'Enum8': types.Enum8,
     'Enum16': types.Enum16,
+    'IntervalDay': types.IntervalDay,
+    'IntervalWeek': types.IntervalWeek,
+    'IntervalMonth': types.IntervalMonth,
+    'IntervalYear': types.IntervalYear,
+    'IntervalHour': types.IntervalHour,
+    'IntervalMinute': types.IntervalMinute,
+    'IntervalSecond': types.IntervalSecond,
+    'Nothing': types.Nothing,
+    'Null': types.Null,
     'Object(\'json\')': types.JSON,
     '_array': types.Array,
     '_nullable': types.Nullable,
@@ -305,8 +318,28 @@ class ClickHouseDialect(default.DefaultDialect):
             return lambda: coltype(type_enum)
 
         elif spec.startswith('Decimal'):
-            coltype = self.ischema_names['Decimal']
-            return coltype(*self._parse_decimal_params(spec))
+            if spec.startswith('Decimal32'):
+                coltype = self.ischema_names['Decimal32']
+                return coltype(self._parse_decimal_scale(spec))
+            elif spec.startswith('Decimal64'):
+                coltype = self.ischema_names['Decimal64']
+                return coltype(self._parse_decimal_scale(spec))
+            elif spec.startswith('Decimal128'):
+                coltype = self.ischema_names['Decimal128']
+                return coltype(self._parse_decimal_scale(spec))
+            elif spec.startswith('Decimal256'):
+                coltype = self.ischema_names['Decimal256']
+                return coltype(self._parse_decimal_scale(spec))
+            else:
+                coltype = self.ischema_names['Decimal']
+                return coltype(*self._parse_decimal_params(spec))
+        elif spec.startswith('Interval'):
+            try:
+                return self.ischema_names[spec]
+            except KeyError:
+                warn("Did not recognize type '%s' of column '%s'" %
+                     (spec, name))
+                return sqltypes.NullType
         elif spec.startswith('DateTime64'):
             coltype = self.ischema_names['DateTime64']
             return coltype(*self._parse_detetime64_params(spec))
@@ -326,6 +359,11 @@ class ClickHouseDialect(default.DefaultDialect):
         inner_spec = get_inner_spec(spec)
         precision, scale = inner_spec.split(',')
         return int(precision.strip()), int(scale.strip())
+
+    @staticmethod
+    def _parse_decimal_scale(spec):
+        inner_spec = get_inner_spec(spec)
+        return int(inner_spec.strip())
 
     @staticmethod
     def _parse_detetime64_params(spec):

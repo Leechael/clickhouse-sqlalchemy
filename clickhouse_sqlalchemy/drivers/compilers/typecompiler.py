@@ -9,6 +9,9 @@ class ClickHouseTypeCompiler(compiler.GenericTypeCompiler):
         else:
             return 'FixedString(%s)' % type_.length
 
+    def visit_fixedstring(self, type_, **kw):
+        return 'FixedString(%s)' % type_.length
+
     def visit_array(self, type_, **kw):
         item_type = type_api.to_instance(type_.item_type)
         return 'Array(%s)' % self.process(item_type, **kw)
@@ -84,8 +87,47 @@ class ClickHouseTypeCompiler(compiler.GenericTypeCompiler):
     def visit_numeric(self, type_, **kw):
         return 'Decimal(%s, %s)' % (type_.precision, type_.scale)
 
+    def visit_decimal32(self, type_, **kw):
+        return 'Decimal32(%s)' % type_.scale
+
+    def visit_decimal64(self, type_, **kw):
+        return 'Decimal64(%s)' % type_.scale
+
+    def visit_decimal128(self, type_, **kw):
+        return 'Decimal128(%s)' % type_.scale
+
+    def visit_decimal256(self, type_, **kw):
+        return 'Decimal256(%s)' % type_.scale
+
     def visit_boolean(self, type_, **kw):
         return 'Bool'
+
+    def visit_intervalday(self, type_, **kw):
+        return 'IntervalDay'
+
+    def visit_intervalweek(self, type_, **kw):
+        return 'IntervalWeek'
+
+    def visit_intervalmonth(self, type_, **kw):
+        return 'IntervalMonth'
+
+    def visit_intervalyear(self, type_, **kw):
+        return 'IntervalYear'
+
+    def visit_intervalhour(self, type_, **kw):
+        return 'IntervalHour'
+
+    def visit_intervalminute(self, type_, **kw):
+        return 'IntervalMinute'
+
+    def visit_intervalsecond(self, type_, **kw):
+        return 'IntervalSecond'
+
+    def visit_nothing(self, type_, **kw):
+        return 'Nothing'
+
+    def visit_null(self, type_, **kw):
+        return 'Null'
 
     def visit_json(self, type_, **kw):
         return 'JSON'
