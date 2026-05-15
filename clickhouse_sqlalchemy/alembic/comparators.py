@@ -2,9 +2,20 @@ import logging
 
 from alembic import __version__ as alembic_version
 from alembic.autogenerate import comparators
-from alembic.autogenerate.compare import _compare_columns
+try:
+    from alembic.autogenerate.compare import _compare_columns
+except ImportError:
+    from alembic.autogenerate.compare.tables import _compare_columns
 from alembic.operations.ops import ModifyTableOps
-from alembic.util.sqla_compat import _reflect_table as _alembic_reflect_table
+try:
+    from alembic.util.sqla_compat import (
+        _reflect_table as _alembic_reflect_table
+    )
+except ImportError:
+    from alembic.autogenerate.compare.util import _InspectorConv
+
+    def _alembic_reflect_table(inspector, table):
+        return _InspectorConv(inspector).reflect_table(table)
 from sqlalchemy import schema as sa_schema
 from sqlalchemy import text
 
@@ -26,12 +37,31 @@ def _extract_to_table_name(create_table_query):
     return inner_name.split('.')[1] if '.' in inner_name else inner_name
 
 
-# Direct call .dispatch_for('schema', 'clickhouse') override an Alembic
-# default ('schema', 'default') comparator. To avoid it (as we have own
-# implementation only for a materialized views ) register default "schema"
-# comparators as "clickhouse" comparators too.
-for default_comparator in comparators._registry[('schema', 'default')]:
-    comparators.dispatch_for('schema', 'clickhouse')(default_comparator)
+def _dispatch_for_clickhouse_schema(fn):
+    try:
+        return comparators.dispatch_for('schema', qualifier='clickhouse')(fn)
+    except TypeError:
+        return comparators.dispatch_for('schema', 'clickhouse')(fn)
+
+
+def _dispatch_table_comparators(autogen_context, *args):
+    try:
+        dispatch = autogen_context.comparators.dispatch(
+            'table', qualifier=autogen_context.dialect.name
+        )
+    except TypeError:
+        dispatch = comparators.dispatch('table')
+
+    return dispatch(*args)
+
+
+# Direct call .dispatch_for('schema', 'clickhouse') used to override an
+# Alembic default ('schema', 'default') comparator. Older Alembic versions
+# therefore need the default "schema" comparators registered for ClickHouse
+# explicitly. Newer Alembic versions use qualifier fallback and plugin
+# population, so there may be no global default comparators to copy.
+for default_comparator in comparators._registry.get(('schema', 'default'), ()):
+    _dispatch_for_clickhouse_schema(default_comparator)
 
 
 def _reflect_table(inspector, table):
@@ -41,7 +71,7 @@ def _reflect_table(inspector, table):
         return _alembic_reflect_table(inspector, table, None)
 
 
-@comparators.dispatch_for('schema', 'clickhouse')
+@_dispatch_for_clickhouse_schema
 def compare_mat_view(autogen_context, upgrade_ops, schemas):
     connection = autogen_context.connection
     dialect = autogen_context.dialect
@@ -163,7 +193,8 @@ def compare_mat_view(autogen_context, upgrade_ops, schemas):
                 autogen_context,
                 inspector,
         ):
-            comparators.dispatch('table')(
+            _dispatch_table_comparators(
+                autogen_context,
                 autogen_context,
                 modify_table_ops,
                 schema,

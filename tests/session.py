@@ -5,19 +5,33 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from clickhouse_sqlalchemy import make_session
 from tests.config import http_uri, native_uri, system_native_uri, asynch_uri, \
-    system_asynch_uri
+    system_asynch_uri, clickhouse_settings
 
-http_engine = create_engine(http_uri)
+
+def _create_http_engine(uri):
+    return create_engine(
+        uri,
+        connect_args={'ch_settings': clickhouse_settings.copy()}
+    )
+
+
+def _with_clickhouse_settings(engine):
+    return engine.execution_options(settings=clickhouse_settings.copy())
+
+
+http_engine = _create_http_engine(http_uri)
 http_session = make_session(http_engine)
-http_stream_session = make_session(create_engine(http_uri + '?stream=1'))
-native_engine = create_engine(native_uri)
+http_stream_session = make_session(_create_http_engine(http_uri + '?stream=1'))
+native_engine = _with_clickhouse_settings(create_engine(native_uri))
 native_session = make_session(native_engine)
-asynch_engine = create_async_engine(asynch_uri)
+asynch_engine = _with_clickhouse_settings(create_async_engine(asynch_uri))
 asynch_session = make_session(asynch_engine, is_async=True)
 
-system_native_session = make_session(create_engine(system_native_uri))
+system_native_session = make_session(
+    _with_clickhouse_settings(create_engine(system_native_uri))
+)
 system_asynch_session = make_session(
-    create_async_engine(system_asynch_uri),
+    _with_clickhouse_settings(create_async_engine(system_asynch_uri)),
     is_async=True
 )
 
@@ -33,7 +47,7 @@ class MockedEngine(object):
         self._buffer = []
 
         if session is None:
-            session = make_session(create_engine(http_uri))
+            session = make_session(_create_http_engine(http_uri))
 
         self.session = session
         self.dialect_cls = session.bind.dialect.__class__

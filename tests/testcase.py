@@ -11,6 +11,10 @@ from tests.session import http_session, native_session, \
 from tests.util import skip_by_server_version, run_async
 
 
+def quote_identifier(name):
+    return '`{}`'.format(name.replace('`', '``'))
+
+
 class BaseAbstractTestCase(object):
     """ Supporting code for tests """
     required_server_version = None
@@ -69,11 +73,12 @@ class BaseTestCase(BaseAbstractTestCase, TestCase):
     @classmethod
     def setUpClass(cls):
         # System database is always present.
+        database = quote_identifier(cls.database)
         system_native_session.execute(
-            text('DROP DATABASE IF EXISTS {}'.format(cls.database))
+            text('DROP DATABASE IF EXISTS {}'.format(database))
         )
         system_native_session.execute(
-            text('CREATE DATABASE {}'.format(cls.database))
+            text('CREATE DATABASE {}'.format(database))
         )
 
         version = system_native_session.execute(
@@ -98,11 +103,12 @@ class BaseAsynchTestCase(BaseTestCase):
     @classmethod
     def setUpClass(cls):
         # System database is always present.
+        database = quote_identifier(cls.database)
         run_async(system_asynch_session.execute)(
-            text('DROP DATABASE IF EXISTS {}'.format(cls.database))
+            text('DROP DATABASE IF EXISTS {}'.format(database))
         )
         run_async(system_asynch_session.execute)(
-            text('CREATE DATABASE {}'.format(cls.database))
+            text('CREATE DATABASE {}'.format(database))
         )
 
         version = (
