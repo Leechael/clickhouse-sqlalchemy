@@ -1,3 +1,4 @@
+from sqlalchemy import exc
 from sqlalchemy.sql import compiler, type_api
 from sqlalchemy.sql.ddl import CreateColumn
 
@@ -123,11 +124,27 @@ class ClickHouseTypeCompiler(compiler.GenericTypeCompiler):
     def visit_intervalsecond(self, type_, **kw):
         return 'IntervalSecond'
 
+    def visit_intervalnanosecond(self, type_, **kw):
+        return 'IntervalNanosecond'
+
+    def visit_intervalmicrosecond(self, type_, **kw):
+        return 'IntervalMicrosecond'
+
+    def visit_intervalmillisecond(self, type_, **kw):
+        return 'IntervalMillisecond'
+
+    def visit_intervalquarter(self, type_, **kw):
+        return 'IntervalQuarter'
+
     def visit_nothing(self, type_, **kw):
-        return 'Nothing'
+        raise exc.CompileError(
+            "Data type Nothing cannot be used in tables"
+        )
 
     def visit_null(self, type_, **kw):
-        return 'Null'
+        raise exc.CompileError(
+            "Data type Null cannot be used in tables"
+        )
 
     def visit_json(self, type_, **kw):
         return 'JSON'
