@@ -18,4 +18,4 @@ def test_escape_param_time_includes_microseconds():
 def test_escape_param_datetime_no_microseconds():
     value = datetime(2026, 1, 1, 0, 0, 0)
     escaped = escape_param(value)
-    assert escaped == "'2026-01-01 00:00:00.000000'"
+    assert escaped == "'2026-01-01 00:00:00'"
