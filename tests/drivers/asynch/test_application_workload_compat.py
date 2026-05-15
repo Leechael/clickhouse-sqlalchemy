@@ -5,6 +5,7 @@ import os
 import uuid
 from datetime import date
 from datetime import datetime
+from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -1618,6 +1619,264 @@ async def test_node_sync_uptime_queries_cover_sumif_maxif_and_streak_scan():
 
 
 @pytest.mark.asyncio
+async def test_sync_log_monitoring_queries_cover_filters_pagination_outages_and_current_state():
+    table = _table_name("sync_monitoring")
+    engine = _engine()
+
+    try:
+        async with engine.begin() as conn:
+            now_result = await conn.execute(text("SELECT now()"))
+            current_minute = now_result.scalar_one().replace(second=0, microsecond=0)
+            first_sync = current_minute - timedelta(minutes=5)
+            first_failure = current_minute - timedelta(minutes=4)
+            second_failure = current_minute - timedelta(minutes=3)
+            last_sync = current_minute - timedelta(minutes=2)
+
+            await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+            await conn.execute(
+                text(
+                    f"""
+                    CREATE TABLE {table} (
+                        snowflake_id UInt64,
+                        node_id UInt32,
+                        sync_time DateTime,
+                        success UInt8,
+                        error_message String DEFAULT '',
+                        duration_ms UInt32,
+                        node_version String,
+                        controller_version String DEFAULT '',
+                        proxy_version String DEFAULT ''
+                    )
+                    ENGINE = MergeTree
+                    ORDER BY (sync_time, node_id)
+                    """
+                )
+            )
+
+            await _execute_each(
+                conn,
+                text(
+                    f"""
+                    INSERT INTO {table} (
+                        snowflake_id, node_id, sync_time, success, error_message,
+                        duration_ms, node_version, controller_version, proxy_version
+                    )
+                    VALUES (
+                        :snowflake_id, :node_id, :sync_time, :success,
+                        :error_message, :duration_ms, :node_version,
+                        :controller_version, :proxy_version
+                    )
+                    """
+                ),
+                [
+                    {
+                        "snowflake_id": 1,
+                        "node_id": 7,
+                        "sync_time": first_sync,
+                        "success": 1,
+                        "error_message": "",
+                        "duration_ms": 90,
+                        "node_version": "1.0.0",
+                        "controller_version": "1.0.0",
+                        "proxy_version": "1.0.0",
+                    },
+                    {
+                        "snowflake_id": 2,
+                        "node_id": 7,
+                        "sync_time": first_failure,
+                        "success": 0,
+                        "error_message": "redacted timeout",
+                        "duration_ms": 400,
+                        "node_version": "1.0.0",
+                        "controller_version": "1.0.0",
+                        "proxy_version": "1.0.0",
+                    },
+                    {
+                        "snowflake_id": 3,
+                        "node_id": 8,
+                        "sync_time": first_failure,
+                        "success": 0,
+                        "error_message": "redacted timeout",
+                        "duration_ms": 420,
+                        "node_version": "2.0.0",
+                        "controller_version": "2.0.0",
+                        "proxy_version": "2.0.0",
+                    },
+                    {
+                        "snowflake_id": 4,
+                        "node_id": 7,
+                        "sync_time": second_failure,
+                        "success": 0,
+                        "error_message": "redacted timeout",
+                        "duration_ms": 410,
+                        "node_version": "1.0.1",
+                        "controller_version": "1.0.1",
+                        "proxy_version": "1.0.1",
+                    },
+                    {
+                        "snowflake_id": 5,
+                        "node_id": 8,
+                        "sync_time": second_failure,
+                        "success": 0,
+                        "error_message": "redacted timeout",
+                        "duration_ms": 430,
+                        "node_version": "2.0.1",
+                        "controller_version": "2.0.1",
+                        "proxy_version": "2.0.1",
+                    },
+                    {
+                        "snowflake_id": 6,
+                        "node_id": 7,
+                        "sync_time": last_sync,
+                        "success": 1,
+                        "error_message": "",
+                        "duration_ms": 120,
+                        "node_version": "1.0.2",
+                        "controller_version": "1.0.2",
+                        "proxy_version": "1.0.2",
+                    },
+                ],
+            )
+
+            conditions = (
+                f"node_id = :node_id AND sync_time >= now() - INTERVAL :days DAY "
+                "AND success = :success"
+            )
+            count_result = await conn.execute(
+                text(f"SELECT count() FROM {table} WHERE {conditions}"),
+                {"node_id": 7, "days": 1, "success": 0},
+            )
+            assert count_result.scalar_one() == 2
+
+            page_result = await conn.execute(
+                text(
+                    f"""
+                    SELECT sync_time, success, error_message, duration_ms, node_version
+                    FROM {table}
+                    WHERE {conditions}
+                    ORDER BY sync_time DESC
+                    LIMIT :limit OFFSET :offset
+                    """
+                ),
+                {
+                    "node_id": 7,
+                    "days": 1,
+                    "success": 0,
+                    "limit": 1,
+                    "offset": 0,
+                },
+            )
+            page_row = page_result.one()
+            assert page_row.sync_time == second_failure
+            assert page_row.success == 0
+            assert page_row.error_message == "redacted timeout"
+            assert page_row.node_version == "1.0.1"
+
+            daily_result = await conn.execute(
+                text(
+                    f"""
+                    SELECT
+                        toDate(sync_time) AS date,
+                        count() AS total_checks,
+                        sumIf(1, success = 1) AS successful_checks,
+                        round(avg(duration_ms), 0) AS avg_duration_ms
+                    FROM {table}
+                    WHERE node_id = :node_id
+                      AND sync_time >= now() - INTERVAL :days DAY
+                    GROUP BY date
+                    ORDER BY date
+                    """
+                ),
+                {"node_id": 7, "days": 1},
+            )
+            daily_row = daily_result.one()
+            assert daily_row.total_checks == 4
+            assert daily_row.successful_checks == 2
+            assert daily_row.avg_duration_ms == 255
+
+            outage_result = await conn.execute(
+                text(
+                    f"""
+                    SELECT
+                        min(sync_time) AS started_at,
+                        max(sync_time) AS ended_at,
+                        count() AS failed_checks
+                    FROM (
+                        SELECT
+                            sync_time,
+                            sync_time - toIntervalMinute(rowNumberInAllBlocks()) AS grp
+                        FROM {table}
+                        WHERE node_id = :node_id
+                          AND sync_time >= now() - INTERVAL :days DAY
+                          AND success = 0
+                        ORDER BY sync_time
+                    )
+                    GROUP BY grp
+                    ORDER BY started_at
+                    """
+                ),
+                {"node_id": 7, "days": 1},
+            )
+            outage_row = outage_result.one()
+            assert outage_row.started_at == first_failure
+            assert outage_row.ended_at == second_failure
+            assert outage_row.failed_checks == 2
+
+            shared_outage_result = await conn.execute(
+                text(
+                    f"""
+                    SELECT sync_time
+                    FROM {table}
+                    WHERE node_id IN :node_ids
+                      AND sync_time >= now() - INTERVAL :days DAY
+                    GROUP BY sync_time
+                    HAVING countIf(success = 1) = 0
+                       AND count() >= :node_count
+                    ORDER BY sync_time
+                    """
+                ),
+                {
+                    "node_ids": (7, 8),
+                    "days": 1,
+                    "node_count": 2,
+                },
+            )
+            assert [row.sync_time for row in shared_outage_result] == [
+                first_failure,
+                second_failure,
+            ]
+
+            current_state_result = await conn.execute(
+                text(
+                    f"""
+                    SELECT
+                        node_id,
+                        argMax(success, sync_time) AS current_success,
+                        argMax(node_version, sync_time) AS current_version,
+                        max(sync_time) AS last_sync_at
+                    FROM {table}
+                    WHERE node_id IN :node_ids
+                    GROUP BY node_id
+                    ORDER BY node_id
+                    """
+                ),
+                {"node_ids": (7, 8)},
+            )
+            current_rows = current_state_result.fetchall()
+            assert [(row.node_id, row.current_success) for row in current_rows] == [
+                (7, 1),
+                (8, 0),
+            ]
+            assert current_rows[0].current_version == "1.0.2"
+            assert current_rows[0].last_sync_at == last_sync
+            assert current_rows[1].current_version == "2.0.1"
+
+    finally:
+        await _drop(engine, table)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_account_recharge_events_keep_float64_and_datetime64_ms():
     table = _table_name("account_events")
     engine = _engine()
@@ -2758,9 +3017,571 @@ async def test_raw_generated_usage_insert_sql_preserves_decimal_literals_and_esc
         await engine.dispose()
 
 
-@pytest.mark.xfail(
-    reason="textual executemany with native INSERT placeholder substitution not yet supported"
-)
+@pytest.mark.asyncio
+async def test_health_sample_tables_cover_replacing_mergetree_union_watermarks_and_timezone_days():
+    point_table = _table_name("health_point")
+    interval_table = _table_name("health_interval")
+    daily_table = _table_name("health_daily")
+    engine = _engine()
+
+    device_id = "device-redacted-1"
+    first_point = datetime(2026, 2, 1, 23, 30, 0, 123000)
+    second_point = datetime(2026, 2, 2, 0, 30, 0, 456000)
+    interval_start = datetime(2026, 2, 2, 1, 0, 0, 111000)
+    interval_end = datetime(2026, 2, 2, 1, 15, 0, 222000)
+    created_old = datetime(2026, 2, 2, 1, 0, 1, 333000)
+    created_new = datetime(2026, 2, 2, 1, 0, 2, 444000)
+
+    try:
+        async with engine.begin() as conn:
+            for table in (daily_table, interval_table, point_table):
+                await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+
+            await conn.execute(
+                text(
+                    f"""
+                    CREATE TABLE {point_table} (
+                        device_id String,
+                        timestamp DateTime64(3),
+                        value Float64,
+                        motion_context Nullable(Int32),
+                        source Nullable(String),
+                        created_at DateTime64(3) DEFAULT now64()
+                    )
+                    ENGINE = ReplacingMergeTree(created_at)
+                    PARTITION BY toYYYYMM(timestamp)
+                    ORDER BY (device_id, timestamp)
+                    """
+                )
+            )
+            await conn.execute(
+                text(
+                    f"""
+                    CREATE TABLE {interval_table} (
+                        device_id String,
+                        start_time DateTime64(3),
+                        end_time DateTime64(3),
+                        value Float64,
+                        source Nullable(String),
+                        created_at DateTime64(3) DEFAULT now64()
+                    )
+                    ENGINE = ReplacingMergeTree(created_at)
+                    PARTITION BY toYYYYMM(start_time)
+                    ORDER BY (device_id, start_time)
+                    """
+                )
+            )
+            await conn.execute(
+                text(
+                    f"""
+                    CREATE TABLE {daily_table} (
+                        device_id String,
+                        date Date,
+                        value Float64,
+                        source Nullable(String),
+                        created_at DateTime64(3) DEFAULT now64()
+                    )
+                    ENGINE = ReplacingMergeTree(created_at)
+                    PARTITION BY toYYYYMM(date)
+                    ORDER BY (device_id, date)
+                    """
+                )
+            )
+
+            await _execute_each(
+                conn,
+                text(
+                    f"""
+                    INSERT INTO {point_table} (
+                        device_id, timestamp, value, motion_context, source, created_at
+                    )
+                    VALUES (
+                        :device_id, :timestamp, :value, :motion_context,
+                        :source, :created_at
+                    )
+                    """
+                ),
+                [
+                    {
+                        "device_id": device_id,
+                        "timestamp": first_point,
+                        "value": 61.0,
+                        "motion_context": None,
+                        "source": "source-redacted",
+                        "created_at": created_old,
+                    },
+                    {
+                        "device_id": device_id,
+                        "timestamp": first_point,
+                        "value": 62.5,
+                        "motion_context": 2,
+                        "source": "source-redacted",
+                        "created_at": created_new,
+                    },
+                    {
+                        "device_id": device_id,
+                        "timestamp": second_point,
+                        "value": 64.0,
+                        "motion_context": 3,
+                        "source": None,
+                        "created_at": created_new,
+                    },
+                ],
+            )
+            await conn.execute(
+                text(
+                    f"""
+                    INSERT INTO {interval_table} (
+                        device_id, start_time, end_time, value, source, created_at
+                    )
+                    VALUES (
+                        :device_id, :start_time, :end_time, :value,
+                        :source, :created_at
+                    )
+                    """
+                ),
+                {
+                    "device_id": device_id,
+                    "start_time": interval_start,
+                    "end_time": interval_end,
+                    "value": 12.5,
+                    "source": "source-redacted",
+                    "created_at": created_new,
+                },
+            )
+            await conn.execute(
+                text(
+                    f"""
+                    INSERT INTO {daily_table} (
+                        device_id, date, value, source, created_at
+                    )
+                    VALUES (:device_id, :date, :value, :source, :created_at)
+                    """
+                ),
+                {
+                    "device_id": device_id,
+                    "date": date(2026, 2, 2),
+                    "value": 58.0,
+                    "source": None,
+                    "created_at": created_new,
+                },
+            )
+
+            latest_point = await conn.execute(
+                text(
+                    f"""
+                    SELECT timestamp, value, motion_context, source, created_at
+                    FROM {point_table} FINAL
+                    WHERE device_id = :device_id
+                      AND timestamp >= :start
+                      AND timestamp <= :end
+                    ORDER BY timestamp
+                    """
+                ),
+                {
+                    "device_id": device_id,
+                    "start": first_point,
+                    "end": second_point,
+                },
+            )
+            point_rows = latest_point.fetchall()
+            assert [row.value for row in point_rows] == [62.5, 64.0]
+            assert point_rows[0].motion_context == 2
+            assert point_rows[1].source is None
+            _assert_ms(point_rows[0].timestamp, 123000)
+            _assert_ms(point_rows[0].created_at, 444000)
+
+            counts = await conn.execute(
+                text(
+                    f"""
+                    SELECT 'point' AS table_name, count() AS count
+                    FROM {point_table} FINAL
+                    WHERE device_id = :device_id
+                    UNION ALL
+                    SELECT 'interval' AS table_name, count() AS count
+                    FROM {interval_table} FINAL
+                    WHERE device_id = :device_id
+                    UNION ALL
+                    SELECT 'daily' AS table_name, count() AS count
+                    FROM {daily_table} FINAL
+                    WHERE device_id = :device_id
+                    """
+                ),
+                {"device_id": device_id},
+            )
+            assert {row.table_name: row.count for row in counts} == {
+                "point": 2,
+                "interval": 1,
+                "daily": 1,
+            }
+
+            watermarks = await conn.execute(
+                text(
+                    f"""
+                    SELECT 'point' AS table_name, toString(max(timestamp)) AS watermark
+                    FROM {point_table}
+                    WHERE device_id = :device_id
+                    UNION ALL
+                    SELECT 'interval' AS table_name, toString(max(start_time)) AS watermark
+                    FROM {interval_table}
+                    WHERE device_id = :device_id
+                    UNION ALL
+                    SELECT 'daily' AS table_name, toString(max(date)) AS watermark
+                    FROM {daily_table}
+                    WHERE device_id = :device_id
+                    """
+                ),
+                {"device_id": device_id},
+            )
+            watermarks_by_table = {row.table_name: row.watermark for row in watermarks}
+            assert watermarks_by_table["point"].startswith("2026-02-02 00:30:00")
+            assert watermarks_by_table["interval"].startswith("2026-02-02 01:00:00")
+            assert watermarks_by_table["daily"] == "2026-02-02"
+
+            days = await conn.execute(
+                text(
+                    f"""
+                    SELECT DISTINCT toDayOfMonth(toTimeZone(timestamp, :timezone)) AS day
+                    FROM {point_table} FINAL
+                    WHERE device_id = :device_id
+                      AND timestamp >= :start
+                      AND timestamp < :end
+                    ORDER BY day
+                    """
+                ),
+                {
+                    "device_id": device_id,
+                    "timezone": "Asia/Taipei",
+                    "start": datetime(2026, 2, 1, 0, 0, 0),
+                    "end": datetime(2026, 2, 3, 0, 0, 0),
+                },
+            )
+            assert [row.day for row in days] == [2]
+
+            daily_rows = await conn.execute(
+                text(
+                    f"""
+                    SELECT date, value, source
+                    FROM {daily_table} FINAL
+                    WHERE device_id = :device_id
+                      AND date >= :start_date
+                      AND date <= :end_date
+                    ORDER BY date
+                    LIMIT :limit
+                    """
+                ),
+                {
+                    "device_id": device_id,
+                    "start_date": date(2026, 2, 1),
+                    "end_date": date(2026, 2, 3),
+                    "limit": 2000,
+                },
+            )
+            daily_row = daily_rows.one()
+            assert daily_row.date == date(2026, 2, 2)
+            assert daily_row.value == 58.0
+            assert daily_row.source is None
+
+    finally:
+        for table in (daily_table, interval_table, point_table):
+            await _drop(engine, table)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_sleep_stage_activity_and_workout_queries_cover_overlap_stage_in_and_nullable_values():
+    sleep_table = _table_name("sleep_stage")
+    activity_table = _table_name("activity_interval")
+    category_table = _table_name("category_event")
+    workout_table = _table_name("workout_event")
+    engine = _engine()
+
+    device_id = "device-redacted-2"
+    window_start = datetime(2026, 2, 3, 22, 0, 0, 111000)
+    sleep_start = datetime(2026, 2, 3, 22, 30, 0, 222000)
+    sleep_end = datetime(2026, 2, 4, 6, 45, 0, 333000)
+    activity_start = datetime(2026, 2, 4, 6, 30, 0, 444000)
+    activity_end = datetime(2026, 2, 4, 7, 0, 0, 555000)
+    category_start = datetime(2026, 2, 4, 7, 30, 0, 666000)
+    category_end = datetime(2026, 2, 4, 7, 35, 0, 777000)
+    workout_start = datetime(2026, 2, 4, 8, 0, 0, 888000)
+    workout_end = datetime(2026, 2, 4, 8, 45, 0, 999000)
+    window_end = datetime(2026, 2, 4, 9, 0, 0, 0)
+
+    try:
+        async with engine.begin() as conn:
+            for table in (workout_table, category_table, activity_table, sleep_table):
+                await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+
+            await conn.execute(
+                text(
+                    f"""
+                    CREATE TABLE {sleep_table} (
+                        device_id String,
+                        start_time DateTime64(3),
+                        end_time DateTime64(3),
+                        stage Int32,
+                        source Nullable(String),
+                        created_at DateTime64(3) DEFAULT now64()
+                    )
+                    ENGINE = ReplacingMergeTree(created_at)
+                    PARTITION BY toYYYYMM(start_time)
+                    ORDER BY (device_id, start_time, end_time)
+                    """
+                )
+            )
+            await conn.execute(
+                text(
+                    f"""
+                    CREATE TABLE {activity_table} (
+                        device_id String,
+                        start_time DateTime64(3),
+                        end_time DateTime64(3),
+                        value Float64,
+                        source Nullable(String),
+                        created_at DateTime64(3) DEFAULT now64()
+                    )
+                    ENGINE = ReplacingMergeTree(created_at)
+                    PARTITION BY toYYYYMM(start_time)
+                    ORDER BY (device_id, start_time)
+                    """
+                )
+            )
+            await conn.execute(
+                text(
+                    f"""
+                    CREATE TABLE {category_table} (
+                        device_id String,
+                        start_time DateTime64(3),
+                        end_time DateTime64(3),
+                        value Nullable(Int32),
+                        source Nullable(String),
+                        created_at DateTime64(3) DEFAULT now64()
+                    )
+                    ENGINE = ReplacingMergeTree(created_at)
+                    PARTITION BY toYYYYMM(start_time)
+                    ORDER BY (device_id, start_time, end_time)
+                    """
+                )
+            )
+            await conn.execute(
+                text(
+                    f"""
+                    CREATE TABLE {workout_table} (
+                        device_id String,
+                        start_time DateTime64(3),
+                        end_time DateTime64(3),
+                        workout_type String,
+                        duration_seconds Float64,
+                        total_energy_kcal Nullable(Float64),
+                        total_distance_meters Nullable(Float64),
+                        source Nullable(String),
+                        created_at DateTime64(3) DEFAULT now64()
+                    )
+                    ENGINE = ReplacingMergeTree(created_at)
+                    PARTITION BY toYYYYMM(start_time)
+                    ORDER BY (device_id, start_time)
+                    """
+                )
+            )
+
+            await _execute_each(
+                conn,
+                text(
+                    f"""
+                    INSERT INTO {sleep_table} (
+                        device_id, start_time, end_time, stage, source
+                    )
+                    VALUES (
+                        :device_id, :start_time, :end_time, :stage, :source
+                    )
+                    """
+                ),
+                [
+                    {
+                        "device_id": device_id,
+                        "start_time": sleep_start,
+                        "end_time": sleep_end,
+                        "stage": 2,
+                        "source": "source-redacted",
+                    },
+                    {
+                        "device_id": device_id,
+                        "start_time": datetime(2026, 2, 4, 7, 0, 0, 0),
+                        "end_time": datetime(2026, 2, 4, 7, 15, 0, 0),
+                        "stage": 0,
+                        "source": "source-redacted",
+                    },
+                ],
+            )
+            await conn.execute(
+                text(
+                    f"""
+                    INSERT INTO {activity_table} (
+                        device_id, start_time, end_time, value, source
+                    )
+                    VALUES (
+                        :device_id, :start_time, :end_time, :value, :source
+                    )
+                    """
+                ),
+                {
+                    "device_id": device_id,
+                    "start_time": activity_start,
+                    "end_time": activity_end,
+                    "value": 36.5,
+                    "source": None,
+                },
+            )
+            await conn.execute(
+                text(
+                    f"""
+                    INSERT INTO {category_table} (
+                        device_id, start_time, end_time, value, source
+                    )
+                    VALUES (
+                        :device_id, :start_time, :end_time, :value, :source
+                    )
+                    """
+                ),
+                {
+                    "device_id": device_id,
+                    "start_time": category_start,
+                    "end_time": category_end,
+                    "value": None,
+                    "source": "source-redacted",
+                },
+            )
+            await conn.execute(
+                text(
+                    f"""
+                    INSERT INTO {workout_table} (
+                        device_id, start_time, end_time, workout_type,
+                        duration_seconds, total_energy_kcal,
+                        total_distance_meters, source
+                    )
+                    VALUES (
+                        :device_id, :start_time, :end_time, :workout_type,
+                        :duration_seconds, :total_energy_kcal,
+                        :total_distance_meters, :source
+                    )
+                    """
+                ),
+                {
+                    "device_id": device_id,
+                    "start_time": workout_start,
+                    "end_time": workout_end,
+                    "workout_type": "workout-redacted",
+                    "duration_seconds": 2700.0,
+                    "total_energy_kcal": None,
+                    "total_distance_meters": 5000.25,
+                    "source": "source-redacted",
+                },
+            )
+
+            sleep_rows = await conn.execute(
+                text(
+                    f"""
+                    SELECT device_id, start_time, end_time, stage, source
+                    FROM {sleep_table} FINAL
+                    WHERE device_id = :device_id
+                      AND start_time >= :start
+                      AND start_time < :end
+                      AND stage IN :stages
+                    ORDER BY start_time
+                    """
+                ),
+                {
+                    "device_id": device_id,
+                    "start": window_start,
+                    "end": window_end,
+                    "stages": (2, 3, 4),
+                },
+            )
+            sleep_row = sleep_rows.one()
+            assert sleep_row.stage == 2
+            _assert_ms(sleep_row.start_time, 222000)
+            _assert_ms(sleep_row.end_time, 333000)
+
+            interval_rows = await conn.execute(
+                text(
+                    f"""
+                    SELECT device_id, start_time, end_time, value, source
+                    FROM {activity_table} FINAL
+                    WHERE device_id = :device_id
+                      AND start_time < :end
+                      AND end_time > :start
+                    ORDER BY start_time
+                    """
+                ),
+                {
+                    "device_id": device_id,
+                    "start": sleep_end,
+                    "end": window_end,
+                },
+            )
+            interval_row = interval_rows.one()
+            assert interval_row.value == 36.5
+            assert interval_row.source is None
+            _assert_ms(interval_row.start_time, 444000)
+            _assert_ms(interval_row.end_time, 555000)
+
+            category_rows = await conn.execute(
+                text(
+                    f"""
+                    SELECT device_id, start_time, end_time, value, source
+                    FROM {category_table} FINAL
+                    WHERE device_id = :device_id
+                      AND start_time < :end
+                      AND end_time > :start
+                    ORDER BY start_time
+                    """
+                ),
+                {
+                    "device_id": device_id,
+                    "start": window_start,
+                    "end": window_end,
+                },
+            )
+            category_row = category_rows.one()
+            assert category_row.value is None
+            _assert_ms(category_row.start_time, 666000)
+            _assert_ms(category_row.end_time, 777000)
+
+            workout_rows = await conn.execute(
+                text(
+                    f"""
+                    SELECT
+                        workout_type,
+                        duration_seconds,
+                        total_energy_kcal,
+                        total_distance_meters,
+                        source
+                    FROM {workout_table} FINAL
+                    WHERE device_id = :device_id
+                      AND start_time < :end
+                      AND end_time > :start
+                    ORDER BY start_time
+                    """
+                ),
+                {
+                    "device_id": device_id,
+                    "start": window_start,
+                    "end": window_end,
+                },
+            )
+            workout_row = workout_rows.one()
+            assert workout_row.workout_type == "workout-redacted"
+            assert workout_row.duration_seconds == 2700.0
+            assert workout_row.total_energy_kcal is None
+            assert workout_row.total_distance_meters == 5000.25
+
+    finally:
+        for table in (workout_table, category_table, activity_table, sleep_table):
+            await _drop(engine, table)
+        await engine.dispose()
+
+
 @pytest.mark.asyncio
 async def test_textual_executemany_insert_supports_multiple_parameter_rows():
     table = _table_name("textual_many")
