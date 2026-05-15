@@ -1,84 +1,60 @@
+from unittest import TestCase
+
+import re
+
 from sqlalchemy import Column
+from sqlalchemy import MetaData
 from sqlalchemy.sql.ddl import CreateTable
 
 from clickhouse_sqlalchemy import types, engines, Table
-from tests.testcase import CompilationTestCase
+from clickhouse_sqlalchemy.drivers.base import ClickHouseDialect
+from clickhouse_sqlalchemy.drivers.base import clickhouse_dialect
 
 
-class IntervalCompilationTestCase(CompilationTestCase):
-    def test_interval_day(self):
-        table = Table(
-            'test', CompilationTestCase.metadata(),
-            Column('x', types.IntervalDay),
-            engines.Memory()
-        )
-        self.assertEqual(
-            self.compile(CreateTable(table)),
-            'CREATE TABLE test (x IntervalDay) ENGINE = Memory'
-        )
+INTERVAL_TYPE_NAMES = [
+    'IntervalNanosecond',
+    'IntervalMicrosecond',
+    'IntervalMillisecond',
+    'IntervalSecond',
+    'IntervalMinute',
+    'IntervalHour',
+    'IntervalDay',
+    'IntervalWeek',
+    'IntervalMonth',
+    'IntervalQuarter',
+    'IntervalYear',
+]
 
-    def test_interval_week(self):
-        table = Table(
-            'test', CompilationTestCase.metadata(),
-            Column('x', types.IntervalWeek),
-            engines.Memory()
-        )
-        self.assertEqual(
-            self.compile(CreateTable(table)),
-            'CREATE TABLE test (x IntervalWeek) ENGINE = Memory'
-        )
 
-    def test_interval_month(self):
-        table = Table(
-            'test', CompilationTestCase.metadata(),
-            Column('x', types.IntervalMonth),
-            engines.Memory()
-        )
-        self.assertEqual(
-            self.compile(CreateTable(table)),
-            'CREATE TABLE test (x IntervalMonth) ENGINE = Memory'
-        )
+class IntervalCompilationTestCase(TestCase):
+    def compile(self, clause):
+        return re.sub(
+            r'\s+', ' ', str(clause.compile(dialect=clickhouse_dialect))
+        ).strip()
 
-    def test_interval_year(self):
-        table = Table(
-            'test', CompilationTestCase.metadata(),
-            Column('x', types.IntervalYear),
-            engines.Memory()
-        )
-        self.assertEqual(
-            self.compile(CreateTable(table)),
-            'CREATE TABLE test (x IntervalYear) ENGINE = Memory'
-        )
+    def test_create_table_for_all_clickhouse_interval_types(self):
+        for type_name in INTERVAL_TYPE_NAMES:
+            with self.subTest(type_name=type_name):
+                interval_type = getattr(types, type_name)
+                table = Table(
+                    'test', MetaData(),
+                    Column('x', interval_type),
+                    engines.Memory()
+                )
 
-    def test_interval_hour(self):
-        table = Table(
-            'test', CompilationTestCase.metadata(),
-            Column('x', types.IntervalHour),
-            engines.Memory()
-        )
-        self.assertEqual(
-            self.compile(CreateTable(table)),
-            'CREATE TABLE test (x IntervalHour) ENGINE = Memory'
-        )
+                ddl = self.compile(CreateTable(table))
 
-    def test_interval_minute(self):
-        table = Table(
-            'test', CompilationTestCase.metadata(),
-            Column('x', types.IntervalMinute),
-            engines.Memory()
-        )
-        self.assertEqual(
-            self.compile(CreateTable(table)),
-            'CREATE TABLE test (x IntervalMinute) ENGINE = Memory'
-        )
+                self.assertIn('x %s' % type_name, ddl)
+                self.assertIn('ENGINE = Memory', ddl)
 
-    def test_interval_second(self):
-        table = Table(
-            'test', CompilationTestCase.metadata(),
-            Column('x', types.IntervalSecond),
-            engines.Memory()
-        )
-        self.assertEqual(
-            self.compile(CreateTable(table)),
-            'CREATE TABLE test (x IntervalSecond) ENGINE = Memory'
-        )
+
+class IntervalReflectionTestCase(TestCase):
+    def setUp(self):
+        self.dialect = ClickHouseDialect()
+
+    def test_reflect_all_clickhouse_interval_types(self):
+        for type_name in INTERVAL_TYPE_NAMES:
+            with self.subTest(type_name=type_name):
+                coltype = self.dialect._get_column_type('x', type_name)
+
+                self.assertIs(coltype, getattr(types, type_name))

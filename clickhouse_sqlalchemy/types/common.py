@@ -261,6 +261,22 @@ class IntervalSecond(ClickHouseTypeEngine):
     __visit_name__ = 'intervalsecond'
 
 
+class IntervalNanosecond(ClickHouseTypeEngine):
+    __visit_name__ = 'intervalnanosecond'
+
+
+class IntervalMicrosecond(ClickHouseTypeEngine):
+    __visit_name__ = 'intervalmicrosecond'
+
+
+class IntervalMillisecond(ClickHouseTypeEngine):
+    __visit_name__ = 'intervalmillisecond'
+
+
+class IntervalQuarter(ClickHouseTypeEngine):
+    __visit_name__ = 'intervalquarter'
+
+
 class Nothing(ClickHouseTypeEngine):
     __visit_name__ = 'nothing'
 
