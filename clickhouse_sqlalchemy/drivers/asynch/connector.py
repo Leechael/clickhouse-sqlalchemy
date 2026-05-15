@@ -177,6 +177,9 @@ class AsyncAdapt_asynch_dbapi:
             setattr(self, name, getattr(self.asynch.errors, name))
 
     def connect(self, *args, **kwargs) -> 'AsyncAdapt_asynch_connection':
+        settings = kwargs.get('settings', {})
+        if 'join_use_nulls' not in settings:
+            kwargs = {**kwargs, 'settings': {**settings, 'join_use_nulls': 1}}
         return AsyncAdapt_asynch_connection(
             self,
             self.asynch.connection.Connection(*args, **kwargs)
