@@ -1,4 +1,20 @@
-on: [push, pull_request]
+on:
+  push:
+    paths-ignore:
+      - "docs/**"
+      - "README.rst"
+      - "CHANGELOG.md"
+      - "CONTRIBUTING.rst"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/pages.yml"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "README.rst"
+      - "CHANGELOG.md"
+      - "CONTRIBUTING.rst"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/pages.yml"
 name: "SQLAlchemy >=2.0.0 versions"
 jobs:
   tests:
