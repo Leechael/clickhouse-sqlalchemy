@@ -19,14 +19,14 @@ Notable differences from upstream
 - **Autocommit transaction semantics** declared explicitly; ClickHouse does not
   provide general SQL transactions, and the dialect reflects that instead of
   pretending otherwise.
-- **Forked ``asynch`` dependency** pinned to a maintained commit that includes
-  compatibility fixes not yet available in the original package.
+- **Maintained ``asynch`` dependency** pinned to the current
+  ``Leechael/asynch`` upstream commit used by this fork.
 
 Supported drivers
 -----------------
 
 - **native** (TCP) via `clickhouse-driver <https://github.com/mymarilyn/clickhouse-driver>`_
-- **async native** (TCP) via the forked `asynch <https://github.com/Leechael/asynch>`_
+- **async native** (TCP) via the maintained `asynch <https://github.com/Leechael/asynch>`_
 - **http** via requests
 
 Installation
@@ -34,10 +34,11 @@ Installation
 
 .. code-block:: bash
 
-    pip install clickhouse-sqlalchemy
+    pip install "clickhouse-sqlalchemy @ git+https://github.com/Leechael/clickhouse-sqlalchemy.git@master"
 
-The async driver requires the forked ``asynch`` package, which is declared as a
-dependency in this fork's ``pyproject.toml``.
+This fork is not published to PyPI yet. Install it directly from GitHub. The
+async driver requires the maintained ``Leechael/asynch`` package, which is
+declared as a pinned Git dependency in this fork's ``pyproject.toml``.
 
 Usage
 =====

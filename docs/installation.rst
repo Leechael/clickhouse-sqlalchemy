@@ -20,28 +20,16 @@ clickhouse-sqlalchemy:
 
 .. _clickhouse-driver: https://pypi.org/project/clickhouse-driver/
 .. _requests: https://pypi.org/project/requests/
-.. _asynch: https://pypi.org/project/asynch/
+.. _asynch: https://github.com/Leechael/asynch
 
 If you are planning to use ``clickhouse-driver`` with compression you should
 also install compression extras as well. See clickhouse-driver `documentation <https://clickhouse-driver.readthedocs.io>`_.
 
-.. _installation-pypi:
-
-Installation from PyPI
-----------------------
-
-The package can be installed using ``pip``:
-
-    .. code-block:: bash
-
-       pip install clickhouse-sqlalchemy
-
-
-Installation from github
+Installation from GitHub
 ------------------------
 
-Development version can be installed directly from github:
+This fork is not published to PyPI yet. Install it directly from GitHub:
 
     .. code-block:: bash
 
-       pip install git+https://github.com/Leechael/clickhouse-sqlalchemy@master#egg=clickhouse-sqlalchemy
+       pip install "clickhouse-sqlalchemy @ git+https://github.com/Leechael/clickhouse-sqlalchemy.git@master"
