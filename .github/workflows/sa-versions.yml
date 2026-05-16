@@ -16,6 +16,11 @@ on:
       - ".github/workflows/docs.yml"
       - ".github/workflows/pages.yml"
 name: "SQLAlchemy >=2.0.0 versions"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   tests:
     runs-on: ubuntu-20.04
