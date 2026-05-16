@@ -6,19 +6,67 @@ Development
 Test configuration
 ------------------
 
-In ``setup.cfg`` you can find ClickHouse server ports, credentials, logging
-level and another options than can be tuned during local testing.
+In ``setup.cfg`` you can find ClickHouse server ports, credentials and logging
+level that can be tuned during local testing. Packaging and Python
+dependencies are managed by PDM through ``pyproject.toml``.
+
+The default test database is ``test-clickhouse-sqlalchemy``. Test setup drops
+and recreates this database automatically, so it does not need to exist before
+running the suite.
+
+Local overrides can be placed in ``.env.test``. This file is intentionally
+ignored by git. The following variables are recognized:
+
+* ``TEST_CLICKHOUSE_URL``: base SQLAlchemy URL used to derive host, native
+  port, user, password and database.
+* ``TEST_CLICKHOUSE_HOST``
+* ``TEST_CLICKHOUSE_PORT``
+* ``TEST_CLICKHOUSE_HTTP_PORT``
+* ``TEST_CLICKHOUSE_DATABASE``
+* ``TEST_CLICKHOUSE_USER``
+* ``TEST_CLICKHOUSE_PASSWORD``
+* ``TEST_ENV_FILE``: path to an alternate dotenv file.
+
+For example:
+
+    .. code-block:: bash
+
+        TEST_CLICKHOUSE_URL=clickhouse+asynch://default:@127.0.0.1:9000/test-clickhouse-sqlalchemy
+        TEST_CLICKHOUSE_HTTP_PORT=8123
+
+Tests set ``wait_for_async_insert=1`` on their ClickHouse sessions. This keeps
+read-after-write assertions deterministic on servers where ``async_insert`` is
+enabled globally.
 
 Running tests locally
 ---------------------
 
 Install desired Python version with system package manager/pyenv/another manager.
 
-Install test requirements and build package:
+Install PDM, then install the project with development dependency groups:
 
     .. code-block:: bash
 
-        python testsrequire.py && python setup.py develop
+        python -m pip install pdm
+        pdm install -G test -G lint -G coverage -G docs
+
+Install the git hook runner:
+
+    .. code-block:: bash
+
+        pdm run prek install
+
+Run all configured hooks manually:
+
+    .. code-block:: bash
+
+        pdm run prek-all
+
+Run only format-fixing hooks:
+
+    .. code-block:: bash
+
+        pdm run fmt
 
 ClickHouse on host machine
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -30,7 +78,7 @@ Run tests:
 
     .. code-block:: bash
 
-        pytest -v
+        pdm run pytest -v
 
 ClickHouse in docker
 ^^^^^^^^^^^^^^^^^^^^
@@ -57,7 +105,8 @@ Create ``clickhouse-client`` script on your host machine:
 After it container ``test-clickhouse-client`` will communicate with
 ``test-clickhouse-server`` transparently from host machine.
 
-Set ``host=clickhouse-server`` in ``setup.cfg``.
+Set ``host=clickhouse-server`` in ``setup.cfg`` or set
+``TEST_CLICKHOUSE_HOST=clickhouse-server`` in ``.env.test``.
 
 Add entry in hosts file:
 
@@ -69,9 +118,9 @@ And run tests:
 
     .. code-block:: bash
 
-        pytest -v
+        pdm run pytest -v
 
-``pip`` will automatically install all required modules for testing.
+PDM installs the required test modules through the dependency groups above.
 
 GitHub Actions in forked repository
 -----------------------------------

@@ -28,13 +28,11 @@ jobs:
           architecture: x64
       - name: Install test requirements
         run: |
-          pip install --upgrade pip setuptools wheel
-          python testsrequire.py
-          python setup.py develop
-          # Limit each test time execution.
-          pip install pytest-timeout
+          pip install --upgrade pip
+          pip install pdm
+          pdm install -G test
       - name: Install SQLAlchemy
-        run: pip install sqlalchemy==2.0.${{ matrix.sa-version }}
+        run: pdm run python -m pip install sqlalchemy==2.0.${{ matrix.sa-version }}
       - name: Run tests
-        run: pytest --timeout=10 -v
+        run: pdm run pytest --timeout=10 -v
         timeout-minutes: 2

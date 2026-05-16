@@ -37,7 +37,7 @@ Installation
     pip install clickhouse-sqlalchemy
 
 The async driver requires the forked ``asynch`` package, which is declared as a
-dependency in this fork's ``setup.py``.
+dependency in this fork's ``pyproject.toml``.
 
 Usage
 =====
@@ -121,6 +121,52 @@ Documentation
 Upstream documentation is available at https://clickhouse-sqlalchemy.readthedocs.io.
 This fork tracks the same API surface; differences are noted in the sections
 above.
+
+Development
+===========
+
+This fork is managed with `PDM <https://pdm-project.org/>`_. Install the
+development dependency groups before running tests or local checks:
+
+.. code-block:: bash
+
+    python -m pip install pdm
+    pdm install -G test -G lint -G coverage -G docs
+
+Git hooks are managed by `prek <https://prek.j178.dev/>`_. Install the
+pre-commit hook once per checkout:
+
+.. code-block:: bash
+
+    pdm run prek install
+
+Common development commands:
+
+.. code-block:: bash
+
+    pdm run fmt          # whitespace, EOF and line-ending fixers
+    pdm run lint         # flake8 checks for package and maintained tests
+    pdm run prek-all     # all configured pre-commit hooks
+    pdm run test         # full pytest suite
+    pdm run test-alembic # focused Alembic suite
+    pdm run docs         # build Sphinx docs
+    pdm build            # build sdist and wheel
+
+Tests use the ``test-clickhouse-sqlalchemy`` database by default. The test
+setup drops and recreates it automatically, so it does not need to exist before
+the suite runs. Local ClickHouse connection overrides can be placed in
+``.env.test``:
+
+.. code-block:: bash
+
+    TEST_CLICKHOUSE_URL=clickhouse+asynch://default:@127.0.0.1:9000/test-clickhouse-sqlalchemy
+    TEST_CLICKHOUSE_HTTP_PORT=8123
+
+Supported variables include ``TEST_CLICKHOUSE_HOST``, ``TEST_CLICKHOUSE_PORT``,
+``TEST_CLICKHOUSE_HTTP_PORT``, ``TEST_CLICKHOUSE_DATABASE``,
+``TEST_CLICKHOUSE_USER``, ``TEST_CLICKHOUSE_PASSWORD`` and
+``TEST_ENV_FILE``. Tests also set ``wait_for_async_insert=1`` for deterministic
+read-after-write assertions when ClickHouse async inserts are enabled.
 
 License
 =======

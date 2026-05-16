@@ -6,8 +6,6 @@ jobs:
     strategy:
       matrix:
         python-version:
-          - "3.7"
-          - "3.8"
           - "3.9"
           - "3.10"
           - "3.11"
@@ -38,29 +36,19 @@ jobs:
           architecture: x64
       - name: Install test requirements
         run: |
-          pip install --upgrade pip setuptools wheel
-          pip install flake8 flake8-print coverage
-          python testsrequire.py
-          python setup.py develop
-          # Limit each test time execution.
-          pip install pytest-timeout
-      - name: Run flake8
-        run: flake8
+          pip install --upgrade pip
+          pip install pdm
+          pdm install -G test -G lint -G coverage
+      - name: Run prek
+        run: pdm run prek-all
       - name: Run tests
-        run: coverage run --source=clickhouse_sqlalchemy -m pytest --timeout=10 -v
+        run: pdm run coverage --timeout=10 -v
         timeout-minutes: 2
-      - name: Set up Python for coverage submission
-        if: ${{ matrix.python-version == '2.7' }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.8
-          architecture: x64
       - name: Install coveralls
         run: |
-          # Newer coveralls do not work with github actions.
-          pip install 'coveralls<3.0.0'
+          pdm install -G coverage
       - name: Upload coverage
-        run: coveralls
+        run: pdm run coveralls
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COVERALLS_PARALLEL: true

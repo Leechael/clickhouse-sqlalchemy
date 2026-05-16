@@ -12,10 +12,10 @@ jobs:
           python-version: 3.12
           architecture: x64
       - name: Update tools
-        run: pip install --upgrade pip setuptools wheel
-      - name: Install sphinx
-        run: pip install sphinx
-      - name: Install package
-        run: pip install -e .
+        run: |
+          pip install --upgrade pip
+          pip install pdm
+      - name: Install docs requirements
+        run: pdm install -G docs
       - name: Build docs
-        run: cd docs && make html
+        run: pdm run docs
