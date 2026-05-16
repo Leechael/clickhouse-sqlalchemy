@@ -387,8 +387,8 @@ async def test_enum_join_and_count_queries_return_expected_rows():
                 text(
                     f"""
                     SELECT
-                        t.target_type,
-                        a.affect_reason,
+                        t.target_type AS target_type,
+                        a.affect_reason AS affect_reason,
                         count() AS affected_count,
                         countIf(s.provider_message_id != '') AS sent_count,
                         groupArray(a.actor_email) AS actor_emails
