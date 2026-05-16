@@ -5,7 +5,9 @@ from alembic.operations.ops import CreateTableOp
 
 from clickhouse_sqlalchemy import Table, engines, types
 from clickhouse_sqlalchemy.drivers.base import clickhouse_dialect
-from ._helpers import assert_migration_python_compiles, render_ops, render_table
+from ._helpers import (
+    assert_migration_python_compiles, render_ops, render_table
+)
 
 
 def _table(engine, *columns, **kwargs):

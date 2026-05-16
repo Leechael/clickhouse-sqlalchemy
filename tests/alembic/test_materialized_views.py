@@ -1,6 +1,6 @@
 from sqlalchemy import Column
 
-from clickhouse_sqlalchemy import engines, types
+from clickhouse_sqlalchemy import types
 from clickhouse_sqlalchemy.alembic import operations
 from ._helpers import assert_migration_python_compiles, render_ops
 

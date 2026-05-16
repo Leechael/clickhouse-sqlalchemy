@@ -86,7 +86,8 @@ TYPE_CASES = [
      'clickhouse_sqlalchemy.types.Tuple('
      'clickhouse_sqlalchemy.types.String(), '
      'clickhouse_sqlalchemy.types.UInt64())'),
-    ('NamedTuple', types.Tuple(('name', types.String), ('value', types.UInt64)),
+    ('NamedTuple',
+     types.Tuple(('name', types.String), ('value', types.UInt64)),
      "clickhouse_sqlalchemy.types.Tuple("
      "('name', clickhouse_sqlalchemy.types.String()), "
      "('value', clickhouse_sqlalchemy.types.UInt64()))"),

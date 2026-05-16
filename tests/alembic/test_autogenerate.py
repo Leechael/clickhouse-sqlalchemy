@@ -1,6 +1,5 @@
 from alembic.autogenerate.api import compare_metadata
 from alembic.operations import Operations
-from alembic.operations.ops import CreateTableOp
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Column, MetaData, inspect, text
 from sqlalchemy.sql.ddl import CreateTable

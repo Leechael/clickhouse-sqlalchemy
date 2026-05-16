@@ -1,4 +1,5 @@
 from alembic.autogenerate.api import AutogenContext, render_python_code
+from alembic.autogenerate import comparators
 from alembic.operations import ops
 from alembic.operations.ops import CreateTableOp
 from alembic.runtime.migration import MigrationContext
@@ -14,7 +15,11 @@ def _registry_functions(dispatcher, target, qualifier):
     for key, registered in dispatcher._registry.items():
         if key[0] != target or key[1] != qualifier:
             continue
-        for fn, _subgroup in registered:
+        for item in registered:
+            if isinstance(item, tuple):
+                fn, _subgroup = item
+            else:
+                fn = item
             functions.append(fn)
     return functions
 
@@ -35,12 +40,9 @@ def test_clickhouse_schema_comparator_keeps_default_table_comparator():
     )
     autogen_context = AutogenContext(context, metadata=MetaData())
 
-    default_schema = _registry_functions(
-        autogen_context.comparators, 'schema', 'default'
-    )
-    clickhouse_schema = _registry_functions(
-        autogen_context.comparators, 'schema', 'clickhouse'
-    )
+    dispatcher = getattr(autogen_context, 'comparators', comparators)
+    default_schema = _registry_functions(dispatcher, 'schema', 'default')
+    clickhouse_schema = _registry_functions(dispatcher, 'schema', 'clickhouse')
 
     assert default_schema
     assert compare_mat_view in clickhouse_schema

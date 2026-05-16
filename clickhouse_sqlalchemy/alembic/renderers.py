@@ -143,7 +143,9 @@ def _render_engine(engine, autogen_context):
             repr(engine.hits)
         ]
         if engine.sharding_key is not None:
-            args.append(_render_expression(engine.sharding_key, autogen_context))
+            args.append(
+                _render_expression(engine.sharding_key, autogen_context)
+            )
         return '{}{}({})'.format(prefix, cls.__name__, ', '.join(args))
 
     if isinstance(engine, engines.Buffer):
@@ -175,7 +177,15 @@ def _find_source_table(op):
     return metadata.tables.get(key)
 
 
-@renderers.dispatch_for(ops.CreateTableOp, replace=True)
+def _dispatch_create_table_renderer(fn):
+    try:
+        return renderers.dispatch_for(ops.CreateTableOp, replace=True)(fn)
+    except TypeError:
+        renderers._registry[(ops.CreateTableOp, 'default')] = fn
+        return fn
+
+
+@_dispatch_create_table_renderer
 def render_create_table(autogen_context, op):
     if autogen_context.dialect.name != 'clickhouse':
         return _render_create_table(autogen_context, op)

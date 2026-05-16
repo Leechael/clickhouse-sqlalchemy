@@ -12,7 +12,10 @@ try:
         _reflect_table as _alembic_reflect_table
     )
 except ImportError:
-    from alembic.autogenerate.compare.util import _InspectorConv
+    try:
+        from alembic.autogenerate.compare import _InspectorConv
+    except ImportError:
+        from alembic.autogenerate.compare.util import _InspectorConv
 
     def _alembic_reflect_table(inspector, table):
         return _InspectorConv(inspector).reflect_table(table)
