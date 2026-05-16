@@ -19,11 +19,11 @@
 - ``DISTINCT ON`` clause. Pull request [#293](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/293) by [aronbierbaum](https://github.com/aronbierbaum). Solves issue [#234](https://github.com/xzkostyan/clickhouse-sqlalchemy/issues/234).
 
 ### Fixed
-- ``select(...).join(...)`` query generation. Pull request [#284](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/284) by [Net-Mist](https://github.com/Net-Mist). 
+- ``select(...).join(...)`` query generation. Pull request [#284](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/284) by [Net-Mist](https://github.com/Net-Mist).
 - [Native] Streaming results without explicitly setting `max_row_buffer`. Pull request [#287](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/287) by [akurdyukov](https://github.com/akurdyukov). Solves issue [#286](https://github.com/xzkostyan/clickhouse-sqlalchemy/issues/286).
-- Username and password quoting for SQLAlchemy>=2.0.25. Pull request [#285](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/285) by [Net-Mist](https://github.com/Net-Mist). 
-- ``match`` function case. Pull request [#283](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/283) by [bader-tayeb](https://github.com/bader-tayeb). 
-- [alembic] Missing column on reflection. Pull request [#277](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/277) by [littlebtc](https://github.com/littlebtc). Solves issue [#280](https://github.com/xzkostyan/clickhouse-sqlalchemy/issues/280). 
+- Username and password quoting for SQLAlchemy>=2.0.25. Pull request [#285](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/285) by [Net-Mist](https://github.com/Net-Mist).
+- ``match`` function case. Pull request [#283](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/283) by [bader-tayeb](https://github.com/bader-tayeb).
+- [alembic] Missing column on reflection. Pull request [#277](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/277) by [littlebtc](https://github.com/littlebtc). Solves issue [#280](https://github.com/xzkostyan/clickhouse-sqlalchemy/issues/280).
 - [alembic] Use `replace_existing=True` for alembic_version.version_num column. Pull request [#275](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/275) by [leemurus](https://github.com/leemurus). Solves issue [#288](https://github.com/xzkostyan/clickhouse-sqlalchemy/issues/288).
 
 ## [0.2.7] - 2024-10-18
@@ -163,7 +163,7 @@ With changes from 0.1.9 and 0.1.10.
 - [HTTP] Fix server version parsing (non-numeric build). Pull request [#118](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/118) by [carlosefr](https://github.com/carlosefr).
 - [HTTP] Handle nullable columns. Pull request [#121](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/121) by [carlosefr](https://github.com/carlosefr).
 - Reflection for schema and views handling. Pull request [#125](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/125) by [hodgesrm](https://github.com/hodgesrm).
-- Expressions reflection in *MergeTree engines. Solves issue [#123](https://github.com/xzkostyan/clickhouse-sqlalchemy/issues/123). 
+- Expressions reflection in *MergeTree engines. Solves issue [#123](https://github.com/xzkostyan/clickhouse-sqlalchemy/issues/123).
 - Columns compilation fix. Replace default dialect. Solves issue [#124](https://github.com/xzkostyan/clickhouse-sqlalchemy/issues/124).
 - [HTTP] Proper handling `verify` flag when parsing DSN. Pull request [#126](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/126) by [yhvicey](https://github.com/yhvicey).
 
@@ -340,7 +340,7 @@ Log, TinyLog, Null.
 - Fixed `count(expr)` rendering. Pull request [#3](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/3) by [gribanov-d](https://github.com/gribanov-d).
 - Fixed empty string parse error over HTTP. Pull request [#5](https://github.com/xzkostyan/clickhouse-sqlalchemy/pull/5) by [gribanov-d](https://github.com/gribanov-d).
 - Nested Array type generation fixed.
-- Structure refactored. 
+- Structure refactored.
 
 ## [0.0.2] - 2017-06-23
 ### Added
@@ -360,7 +360,7 @@ Log, TinyLog, Null.
 - `DROP TABLE IF EXISTS` clause.
 - Automatic registering as dialect `clickhouse://`.
 - Chunked `INSERT INTO` in one request.
-- Engines: MergeTree, CollapsingMergeTree, SummingMergeTree, Buffer, Memory. 
+- Engines: MergeTree, CollapsingMergeTree, SummingMergeTree, Buffer, Memory.
 
 [Unreleased]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.2...HEAD
 [0.3.2]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.1...0.3.2
