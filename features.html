@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Features &#8212; clickhouse-sqlalchemy 0.3.2 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=b43b9e83" />
+    <link rel="stylesheet" type="text/css" href="_static/css/custom.css?v=030e895d" />
+    <script src="_static/documentation_options.js?v=71d9d8e6"></script>
+    <script src="_static/doctools.js?v=9a2dae69"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Types" href="types.html" />
+    <link rel="prev" title="Connection configuration" href="connection.html" />
+    <link href="_static/css/custom.css" rel="stylesheet" type="text/css">
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">clickhouse-sqlalchemy</a></h1>
+
+
+
+<p class="blurb">ClickHouse dialect for SQLAlchemy</p>
+
+
+
+
+<p>
+<iframe src="https://ghbtns.com/github-btn.html?user=Leechael&repo=clickhouse-sqlalchemy&type=watch&count=true&size=large&v=2"
+  allowtransparency="true" frameborder="0" scrolling="0" width="200px" height="35px"></iframe>
+</p>
+
+
+
+
+
+<h3>Navigation</h3>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="connection.html">Connection configuration</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Features</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#tables-and-models-definition">Tables and models definition</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#materialized-views">Materialized Views</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#basic-ddl-support">Basic DDL support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#query-method-chaining">Query method chaining</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#insert">INSERT</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#update-and-delete">UPDATE and DELETE</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#select-extensions">SELECT extensions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#miscellaneous">Miscellaneous</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="types.html">Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="migrations.html">Migrations</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="development.html">Development</a></li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">How to Contribute</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="connection.html" title="previous chapter">Connection configuration</a></li>
+      <li>Next: <a href="types.html" title="next chapter">Types</a></li>
+  </ul></li>
+</ul>
+</div>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="features">
+<span id="id1"></span><h1>Features<a class="headerlink" href="#features" title="Link to this heading">¶</a></h1>
+<p>This section describes features that current dialect supports.</p>
+<section id="tables-and-models-definition">
+<h2>Tables and models definition<a class="headerlink" href="#tables-and-models-definition" title="Link to this heading">¶</a></h2>
+<p>Both declarative and constructor-style tables supported:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_engine</span><span class="p">,</span> <span class="n">Column</span><span class="p">,</span> <span class="n">MetaData</span><span class="p">,</span> <span class="n">literal</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">clickhouse_sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">Table</span><span class="p">,</span> <span class="n">make_session</span><span class="p">,</span> <span class="n">get_declarative_base</span><span class="p">,</span> <span class="n">types</span><span class="p">,</span> <span class="n">engines</span>
+<span class="p">)</span>
+
+<span class="n">uri</span> <span class="o">=</span> <span class="s1">&#39;clickhouse://default:@localhost/test&#39;</span>
+
+<span class="n">engine</span> <span class="o">=</span> <span class="n">create_engine</span><span class="p">(</span><span class="n">uri</span><span class="p">)</span>
+<span class="n">session</span> <span class="o">=</span> <span class="n">make_session</span><span class="p">(</span><span class="n">engine</span><span class="p">)</span>
+<span class="n">metadata</span> <span class="o">=</span> <span class="n">MetaData</span><span class="p">(</span><span class="n">bind</span><span class="o">=</span><span class="n">engine</span><span class="p">)</span>
+
+<span class="n">Base</span> <span class="o">=</span> <span class="n">get_declarative_base</span><span class="p">(</span><span class="n">metadata</span><span class="o">=</span><span class="n">metadata</span><span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Rate</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>
+    <span class="n">day</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">,</span> <span class="n">comment</span><span class="o">=</span><span class="s1">&#39;Rate value&#39;</span><span class="p">)</span>
+    <span class="n">other_value</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">DateTime</span><span class="p">)</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">Memory</span><span class="p">(),</span>
+        <span class="p">{</span><span class="s1">&#39;comment&#39;</span><span class="p">:</span> <span class="s1">&#39;Store rates&#39;</span><span class="p">}</span>
+    <span class="p">)</span>
+
+<span class="n">another_table</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span><span class="s1">&#39;another_rate&#39;</span><span class="p">,</span> <span class="n">metadata</span><span class="p">,</span>
+    <span class="n">Column</span><span class="p">(</span><span class="s1">&#39;day&#39;</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+    <span class="n">Column</span><span class="p">(</span><span class="s1">&#39;value&#39;</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">,</span> <span class="n">server_default</span><span class="o">=</span><span class="n">literal</span><span class="p">(</span><span class="mi">1</span><span class="p">)),</span>
+    <span class="n">engines</span><span class="o">.</span><span class="n">Memory</span><span class="p">()</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Tables created in declarative way have lowercase with words separated by
+underscores naming convention. But you can easy set you own via SQLAlchemy
+<code class="docutils literal notranslate"><span class="pre">__tablename__</span></code> attribute.</p>
+<section id="functions">
+<h3>Functions<a class="headerlink" href="#functions" title="Link to this heading">¶</a></h3>
+<p>Many of the ClickHouse functions can be called using the SQLAlchemy <code class="docutils literal notranslate"><span class="pre">func</span></code>
+proxy. A few of aggregate functions require special handling though. There
+following functions are supported:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">func.quantile(0.5,</span> <span class="pre">column1)</span></code> becomes <code class="docutils literal notranslate"><span class="pre">quantile(0.5)(column1)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">func.quantileIf(0.5,</span> <span class="pre">column1,</span> <span class="pre">column2</span> <span class="pre">&gt;</span> <span class="pre">10)</span></code> becomes <code class="docutils literal notranslate"><span class="pre">quantileIf(0.5)(column1,</span> <span class="pre">column2</span> <span class="pre">&gt;</span> <span class="pre">10)</span></code></p></li>
+</ul>
+</section>
+<section id="dialect-specific-options">
+<h3>Dialect-specific options<a class="headerlink" href="#dialect-specific-options" title="Link to this heading">¶</a></h3>
+<p>You can specify particular codec for column:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Rate</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>
+    <span class="n">day</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">)</span>
+    <span class="n">other_value</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span>
+        <span class="n">types</span><span class="o">.</span><span class="n">DateTime</span><span class="p">,</span>
+        <span class="n">clickhouse_codec</span><span class="o">=</span><span class="p">(</span><span class="s1">&#39;DoubleDelta&#39;</span><span class="p">,</span> <span class="s1">&#39;ZSTD&#39;</span><span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">Memory</span><span class="p">(),</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">rate</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="k">day</span><span class="w"> </span><span class="nb">Date</span><span class="p">,</span>
+<span class="w">    </span><span class="n">value</span><span class="w"> </span><span class="n">Int32</span><span class="p">,</span>
+<span class="w">    </span><span class="n">other_value</span><span class="w"> </span><span class="n">DateTime</span><span class="w"> </span><span class="n">CODEC</span><span class="p">(</span><span class="n">DoubleDelta</span><span class="p">,</span><span class="w"> </span><span class="n">ZSTD</span><span class="p">)</span>
+<span class="p">)</span><span class="w"> </span><span class="n">ENGINE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Memory</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p><code class="docutils literal notranslate"><span class="pre">server_default</span></code> will render as <code class="docutils literal notranslate"><span class="pre">DEFAULT</span></code></p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Rate</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>
+    <span class="n">day</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">)</span>
+    <span class="n">other_value</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span>
+        <span class="n">types</span><span class="o">.</span><span class="n">DateTime</span><span class="p">,</span> <span class="n">server_default</span><span class="o">=</span><span class="n">func</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+    <span class="p">)</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">Memory</span><span class="p">(),</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">rate</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="k">day</span><span class="w"> </span><span class="nb">Date</span><span class="p">,</span>
+<span class="w">    </span><span class="n">value</span><span class="w"> </span><span class="n">Int32</span><span class="p">,</span>
+<span class="w">    </span><span class="n">other_value</span><span class="w"> </span><span class="n">DateTime</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="n">now</span><span class="p">()</span>
+<span class="p">)</span><span class="w"> </span><span class="n">ENGINE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Memory</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p><code class="docutils literal notranslate"><span class="pre">MATERIALIZED</span></code> and <code class="docutils literal notranslate"><span class="pre">ALIAS</span></code> also supported</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Rate</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>
+    <span class="n">day</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">)</span>
+    <span class="n">other_value</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span>
+        <span class="n">types</span><span class="o">.</span><span class="n">DateTime</span><span class="p">,</span> <span class="n">clickhouse_materialized</span><span class="o">=</span><span class="n">func</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+    <span class="p">)</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">Memory</span><span class="p">(),</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">rate</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="k">day</span><span class="w"> </span><span class="nb">Date</span><span class="p">,</span>
+<span class="w">    </span><span class="n">value</span><span class="w"> </span><span class="n">Int32</span><span class="p">,</span>
+<span class="w">    </span><span class="n">other_value</span><span class="w"> </span><span class="n">DateTime</span><span class="w"> </span><span class="n">MATERIALIZED</span><span class="w"> </span><span class="n">now</span><span class="p">()</span>
+<span class="p">)</span><span class="w"> </span><span class="n">ENGINE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Memory</span>
+</pre></div>
+</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Rate</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>
+    <span class="n">day</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">)</span>
+    <span class="n">other_value</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span>
+        <span class="n">types</span><span class="o">.</span><span class="n">DateTime</span><span class="p">,</span> <span class="n">clickhouse_alias</span><span class="o">=</span><span class="n">func</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+    <span class="p">)</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">Memory</span><span class="p">(),</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">rate</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="k">day</span><span class="w"> </span><span class="nb">Date</span><span class="p">,</span>
+<span class="w">    </span><span class="n">value</span><span class="w"> </span><span class="n">Int32</span><span class="p">,</span>
+<span class="w">    </span><span class="n">other_value</span><span class="w"> </span><span class="n">DateTime</span><span class="w"> </span><span class="k">ALIAS</span><span class="w"> </span><span class="n">now</span><span class="p">()</span>
+<span class="p">)</span><span class="w"> </span><span class="n">ENGINE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Memory</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>You can also specify another column as default, materialized and alias</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Rate</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>
+    <span class="n">day</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">)</span>
+    <span class="n">other_value</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">,</span> <span class="n">server_default</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">Memory</span><span class="p">(),</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">rate</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="k">day</span><span class="w"> </span><span class="nb">Date</span><span class="p">,</span>
+<span class="w">    </span><span class="n">value</span><span class="w"> </span><span class="n">Int32</span><span class="p">,</span>
+<span class="w">    </span><span class="n">other_value</span><span class="w"> </span><span class="n">Int32</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="n">value</span>
+<span class="p">)</span><span class="w"> </span><span class="n">ENGINE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Memory</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="table-engines">
+<h3>Table Engines<a class="headerlink" href="#table-engines" title="Link to this heading">¶</a></h3>
+<p>Every table in ClickHouse requires engine. Engine can be specified in
+declarative <code class="docutils literal notranslate"><span class="pre">__table_args__</span></code>:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_engine</span><span class="p">,</span> <span class="n">MetaData</span><span class="p">,</span> <span class="n">Column</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">clickhouse_sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_declarative_base</span><span class="p">,</span> <span class="n">types</span><span class="p">,</span> <span class="n">engines</span>
+<span class="p">)</span>
+
+<span class="n">engine</span> <span class="o">=</span> <span class="n">create_engine</span><span class="p">(</span><span class="s1">&#39;clickhouse://localhost&#39;</span><span class="p">)</span>
+<span class="n">metadata</span> <span class="o">=</span> <span class="n">MetaData</span><span class="p">(</span><span class="n">bind</span><span class="o">=</span><span class="n">engine</span><span class="p">)</span>
+<span class="n">Base</span> <span class="o">=</span> <span class="n">get_declarative_base</span><span class="p">(</span><span class="n">metadata</span><span class="o">=</span><span class="n">metadata</span><span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Statistics</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>
+    <span class="n">date</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">sign</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int8</span><span class="p">)</span>
+    <span class="n">grouping</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">)</span>
+    <span class="n">metric1</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">)</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">CollapsingMergeTree</span><span class="p">(</span>
+            <span class="n">sign</span><span class="p">,</span>
+            <span class="n">partition_by</span><span class="o">=</span><span class="n">func</span><span class="o">.</span><span class="n">toYYYYMM</span><span class="p">(</span><span class="n">date</span><span class="p">),</span>
+            <span class="n">order_by</span><span class="o">=</span><span class="p">(</span><span class="n">date</span><span class="p">,</span> <span class="n">grouping</span><span class="p">)</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Or in table:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_engine</span><span class="p">,</span> <span class="n">MetaData</span><span class="p">,</span> <span class="n">Column</span><span class="p">,</span> <span class="n">text</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">clickhouse_sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_declarative_base</span><span class="p">,</span> <span class="n">types</span><span class="p">,</span> <span class="n">engines</span>
+<span class="p">)</span>
+
+<span class="n">engine</span> <span class="o">=</span> <span class="n">create_engine</span><span class="p">(</span><span class="s1">&#39;clickhouse+native://localhost/default&#39;</span><span class="p">)</span>
+<span class="n">metadata</span> <span class="o">=</span> <span class="n">MetaData</span><span class="p">(</span><span class="n">bind</span><span class="o">=</span><span class="n">engine</span><span class="p">)</span>
+
+<span class="n">statistics</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span>
+    <span class="s1">&#39;statistics&#39;</span><span class="p">,</span> <span class="n">metadata</span><span class="p">,</span>
+    <span class="n">Column</span><span class="p">(</span><span class="s1">&#39;date&#39;</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+    <span class="n">Column</span><span class="p">(</span><span class="s1">&#39;sign&#39;</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">Int8</span><span class="p">),</span>
+    <span class="n">Column</span><span class="p">(</span><span class="s1">&#39;grouping&#39;</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">),</span>
+    <span class="n">Column</span><span class="p">(</span><span class="s1">&#39;metric1&#39;</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">),</span>
+
+    <span class="n">engines</span><span class="o">.</span><span class="n">CollapsingMergeTree</span><span class="p">(</span>
+        <span class="s1">&#39;sign&#39;</span><span class="p">,</span>
+        <span class="n">partition_by</span><span class="o">=</span><span class="n">text</span><span class="p">(</span><span class="s1">&#39;toYYYYMM(date)&#39;</span><span class="p">),</span>
+        <span class="n">order_by</span><span class="o">=</span><span class="p">(</span><span class="s1">&#39;date&#39;</span><span class="p">,</span> <span class="s1">&#39;grouping&#39;</span><span class="p">)</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Engine parameters can be column variables or column names.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>SQLAlchemy functions can be applied to variables, but not to names.</p>
+<p>This will work <code class="docutils literal notranslate"><span class="pre">partition_by=func.toYYYYMM(date)</span></code> and this will not:
+<code class="docutils literal notranslate"><span class="pre">partition_by=func.toYYYYMM('date')</span></code>. You should use
+<code class="docutils literal notranslate"><span class="pre">partition_by=text('toYYYYMM(date)')</span></code> in the second case.</p>
+</div>
+<p>Currently supported engines:</p>
+<ul class="simple">
+<li><p>*MergeTree</p></li>
+<li><p>Replicated*MergeTree</p></li>
+<li><p>Distributed</p></li>
+<li><p>Buffer</p></li>
+<li><p>View/MaterializedView</p></li>
+<li><p>Log/TinyLog</p></li>
+<li><p>Memory</p></li>
+<li><p>Null</p></li>
+<li><p>File</p></li>
+</ul>
+<p>Each engine has it’s own parameters. Please refer to ClickHouse documentation
+about engines.</p>
+<p>Engine settings can be passed as additional keyword arguments</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">engines</span><span class="o">.</span><span class="n">MergeTree</span><span class="p">(</span>
+    <span class="n">partition_by</span><span class="o">=</span><span class="n">date</span><span class="p">,</span>
+    <span class="n">key</span><span class="o">=</span><span class="s1">&#39;value&#39;</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Will render to</p>
+<blockquote>
+<div><div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">MergeTree</span><span class="p">()</span>
+<span class="n">PARTITION</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="nb">date</span>
+<span class="n">SETTINGS</span><span class="w"> </span><span class="k">key</span><span class="o">=</span><span class="n">value</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>More complex examples</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">engines</span><span class="o">.</span><span class="n">MergeTree</span><span class="p">(</span><span class="n">order_by</span><span class="o">=</span><span class="n">func</span><span class="o">.</span><span class="n">tuple_</span><span class="p">())</span>
+
+<span class="n">engines</span><span class="o">.</span><span class="n">MergeTree</span><span class="p">(</span>
+    <span class="n">primary_key</span><span class="o">=</span><span class="p">(</span><span class="s1">&#39;device_id&#39;</span><span class="p">,</span> <span class="s1">&#39;timestamp&#39;</span><span class="p">),</span>
+    <span class="n">order_by</span><span class="o">=</span><span class="p">(</span><span class="s1">&#39;device_id&#39;</span><span class="p">,</span> <span class="s1">&#39;timestamp&#39;</span><span class="p">),</span>
+    <span class="n">partition_by</span><span class="o">=</span><span class="n">func</span><span class="o">.</span><span class="n">toYYYYMM</span><span class="p">(</span><span class="n">timestamp</span><span class="p">)</span>
+<span class="p">)</span>
+
+<span class="n">engines</span><span class="o">.</span><span class="n">MergeTree</span><span class="p">(</span>
+    <span class="n">partition_by</span><span class="o">=</span><span class="n">text</span><span class="p">(</span><span class="s1">&#39;toYYYYMM(date)&#39;</span><span class="p">),</span>
+    <span class="n">order_by</span><span class="o">=</span><span class="p">(</span><span class="s1">&#39;date&#39;</span><span class="p">,</span> <span class="n">func</span><span class="o">.</span><span class="n">intHash32</span><span class="p">(</span><span class="n">x</span><span class="p">)),</span>
+    <span class="n">sample_by</span><span class="o">=</span><span class="n">func</span><span class="o">.</span><span class="n">intHash32</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="p">)</span>
+
+<span class="n">engines</span><span class="o">.</span><span class="n">MergeTree</span><span class="p">(</span>
+    <span class="n">partition_by</span><span class="o">=</span><span class="n">date</span><span class="p">,</span>
+    <span class="n">order_by</span><span class="o">=</span><span class="p">(</span><span class="n">date</span><span class="p">,</span> <span class="n">x</span><span class="p">),</span>
+    <span class="n">primary_key</span><span class="o">=</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">),</span>
+    <span class="n">sample_by</span><span class="o">=</span><span class="n">func</span><span class="o">.</span><span class="n">random</span><span class="p">(),</span>
+    <span class="n">key</span><span class="o">=</span><span class="s1">&#39;value&#39;</span>
+<span class="p">)</span>
+
+<span class="n">engines</span><span class="o">.</span><span class="n">CollapsingMergeTree</span><span class="p">(</span>
+    <span class="n">sign</span><span class="p">,</span>
+    <span class="n">partition_by</span><span class="o">=</span><span class="n">date</span><span class="p">,</span>
+    <span class="n">order_by</span><span class="o">=</span><span class="p">(</span><span class="n">date</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>
+<span class="p">)</span>
+
+<span class="n">engines</span><span class="o">.</span><span class="n">ReplicatedCollapsingMergeTree</span><span class="p">(</span>
+    <span class="s1">&#39;/table/path&#39;</span><span class="p">,</span> <span class="s1">&#39;name&#39;</span><span class="p">,</span>
+    <span class="n">sign</span><span class="p">,</span>
+    <span class="n">partition_by</span><span class="o">=</span><span class="n">date</span><span class="p">,</span>
+    <span class="n">order_by</span><span class="o">=</span><span class="p">(</span><span class="n">date</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>
+<span class="p">)</span>
+
+<span class="n">engines</span><span class="o">.</span><span class="n">VersionedCollapsingMergeTree</span><span class="p">(</span>
+    <span class="n">sign</span><span class="p">,</span> <span class="n">version</span><span class="p">,</span>
+    <span class="n">partition_by</span><span class="o">=</span><span class="n">date</span><span class="p">,</span>
+    <span class="n">order_by</span><span class="o">=</span><span class="p">(</span><span class="n">date</span><span class="p">,</span> <span class="n">x</span><span class="p">),</span>
+<span class="p">)</span>
+
+<span class="n">engines</span><span class="o">.</span><span class="n">SummingMergeTree</span><span class="p">(</span>
+    <span class="n">columns</span><span class="o">=</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="p">),</span>
+    <span class="n">partition_by</span><span class="o">=</span><span class="n">date</span><span class="p">,</span>
+    <span class="n">order_by</span><span class="o">=</span><span class="p">(</span><span class="n">date</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>
+<span class="p">)</span>
+
+<span class="n">engines</span><span class="o">.</span><span class="n">ReplacingMergeTree</span><span class="p">(</span>
+    <span class="n">version</span><span class="o">=</span><span class="s1">&#39;version&#39;</span><span class="p">,</span>
+    <span class="n">partition_by</span><span class="o">=</span><span class="s1">&#39;date&#39;</span><span class="p">,</span>
+    <span class="n">order_by</span><span class="o">=</span><span class="p">(</span><span class="s1">&#39;date&#39;</span><span class="p">,</span> <span class="s1">&#39;x&#39;</span><span class="p">)</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Tables can be reflected with engines</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_engine</span><span class="p">,</span> <span class="n">MetaData</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">clickhouse_sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">Table</span>
+
+<span class="n">engine</span> <span class="o">=</span> <span class="n">create_engine</span><span class="p">(</span><span class="s1">&#39;clickhouse+native://localhost/default&#39;</span><span class="p">)</span>
+<span class="n">metadata</span> <span class="o">=</span> <span class="n">MetaData</span><span class="p">(</span><span class="n">bind</span><span class="o">=</span><span class="n">engine</span><span class="p">)</span>
+
+<span class="n">statistics</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span><span class="s1">&#39;statistics&#39;</span><span class="p">,</span> <span class="n">metadata</span><span class="p">,</span> <span class="n">autoload</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Reflection is possible for tables created with modern syntax. Table with
+following engine can’t be reflected.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">MergeTree</span><span class="p">(</span><span class="n">EventDate</span><span class="p">,</span> <span class="p">(</span><span class="n">CounterID</span><span class="p">,</span> <span class="n">EventDate</span><span class="p">),</span> <span class="mi">8192</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Engine reflection can take long time if your database have many  tables.
+You can control engine reflection with <strong>engine_reflection</strong> connection
+parameter.</p>
+</div>
+<section id="on-cluster">
+<h4>ON CLUSTER<a class="headerlink" href="#on-cluster" title="Link to this heading">¶</a></h4>
+<p><code class="docutils literal notranslate"><span class="pre">ON</span> <span class="pre">CLUSTER</span></code> clause will be automatically added to DDL queries (
+<code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">TABLE</span></code>, <code class="docutils literal notranslate"><span class="pre">DROP</span> <span class="pre">TABLE</span></code>, etc.) if cluster is specified in
+<code class="docutils literal notranslate"><span class="pre">__table_args__</span></code></p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">TestTable</span><span class="p">(</span><span class="o">...</span><span class="p">):</span>
+    <span class="o">...</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">ReplicatedMergeTree</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
+        <span class="p">{</span><span class="s1">&#39;clickhouse_cluster&#39;</span><span class="p">:</span> <span class="s1">&#39;my_cluster&#39;</span><span class="p">}</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="ttl">
+<h4>TTL<a class="headerlink" href="#ttl" title="Link to this heading">¶</a></h4>
+<p><code class="docutils literal notranslate"><span class="pre">TTL</span></code> clause can be rendered during table creation</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">TestTable</span><span class="p">(</span><span class="o">...</span><span class="p">):</span>
+    <span class="n">date</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">)</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">MergeTree</span><span class="p">(</span><span class="n">ttl</span><span class="o">=</span><span class="n">date</span> <span class="o">+</span> <span class="n">func</span><span class="o">.</span><span class="n">toIntervalDay</span><span class="p">(</span><span class="mi">1</span><span class="p">)),</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">test_table</span><span class="w"> </span><span class="p">(</span><span class="nb">date</span><span class="w"> </span><span class="nb">Date</span><span class="p">,</span><span class="w"> </span><span class="n">x</span><span class="w"> </span><span class="n">Int32</span><span class="p">)</span>
+<span class="n">ENGINE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MergeTree</span><span class="p">()</span>
+<span class="n">TTL</span><span class="w"> </span><span class="nb">date</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">toIntervalDay</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Deletion</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">clickhouse_sqlalchemy.sql.ddl</span><span class="w"> </span><span class="kn">import</span> <span class="n">ttl_delete</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">TestTable</span><span class="p">(</span><span class="o">...</span><span class="p">):</span>
+    <span class="n">date</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">)</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">MergeTree</span><span class="p">(</span>
+            <span class="n">ttl</span><span class="o">=</span><span class="n">ttl_delete</span><span class="p">(</span><span class="n">date</span> <span class="o">+</span> <span class="n">func</span><span class="o">.</span><span class="n">toIntervalDay</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">test_table</span><span class="w"> </span><span class="p">(</span><span class="nb">date</span><span class="w"> </span><span class="nb">Date</span><span class="p">,</span><span class="w"> </span><span class="n">x</span><span class="w"> </span><span class="n">Int32</span><span class="p">)</span>
+<span class="n">ENGINE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MergeTree</span><span class="p">()</span>
+<span class="n">TTL</span><span class="w"> </span><span class="nb">date</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">toIntervalDay</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="k">DELETE</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Multiple clauses at once</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">clickhouse_sqlalchemy.sql.ddl</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">ttl_delete</span><span class="p">,</span>
+    <span class="n">ttl_to_disk</span><span class="p">,</span>
+    <span class="n">ttl_to_volume</span>
+<span class="p">)</span>
+
+<span class="n">ttl</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">ttl_delete</span><span class="p">(</span><span class="n">date</span> <span class="o">+</span> <span class="n">func</span><span class="o">.</span><span class="n">toIntervalDay</span><span class="p">(</span><span class="mi">1</span><span class="p">)),</span>
+    <span class="n">ttl_to_disk</span><span class="p">(</span><span class="n">date</span> <span class="o">+</span> <span class="n">func</span><span class="o">.</span><span class="n">toIntervalDay</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="s1">&#39;hdd&#39;</span><span class="p">),</span>
+    <span class="n">ttl_to_volume</span><span class="p">(</span><span class="n">date</span> <span class="o">+</span> <span class="n">func</span><span class="o">.</span><span class="n">toIntervalDay</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="s1">&#39;slow&#39;</span><span class="p">),</span>
+<span class="p">]</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">TestTable</span><span class="p">(</span><span class="o">...</span><span class="p">):</span>
+    <span class="n">date</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">)</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">MergeTree</span><span class="p">(</span><span class="n">ttl</span><span class="o">=</span><span class="n">ttl</span><span class="p">),</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">test_table</span><span class="w"> </span><span class="p">(</span><span class="nb">date</span><span class="w"> </span><span class="nb">Date</span><span class="p">,</span><span class="w"> </span><span class="n">x</span><span class="w"> </span><span class="n">Int32</span><span class="p">)</span>
+<span class="n">ENGINE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MergeTree</span><span class="p">()</span>
+<span class="n">TTL</span><span class="w"> </span><span class="nb">date</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">toIntervalDay</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="k">DELETE</span><span class="p">,</span>
+<span class="w">    </span><span class="nb">date</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">toIntervalDay</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">DISK</span><span class="w"> </span><span class="s1">&#39;hdd&#39;</span><span class="p">,</span>
+<span class="w">    </span><span class="nb">date</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">toIntervalDay</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">VOLUME</span><span class="w"> </span><span class="s1">&#39;slow&#39;</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+</section>
+<section id="custom-engines">
+<h3>Custom engines<a class="headerlink" href="#custom-engines" title="Link to this heading">¶</a></h3>
+<p>If some engine is not supported yet, you can add new one into your code in the
+following way:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_engine</span><span class="p">,</span> <span class="n">MetaData</span><span class="p">,</span> <span class="n">Column</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">clickhouse_sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">Table</span><span class="p">,</span> <span class="n">get_declarative_base</span><span class="p">,</span> <span class="n">types</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">clickhouse_sqlalchemy.engines.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">Engine</span>
+
+<span class="n">engine</span> <span class="o">=</span> <span class="n">create_engine</span><span class="p">(</span><span class="s1">&#39;clickhouse://localhost/default&#39;</span><span class="p">)</span>
+<span class="n">metadata</span> <span class="o">=</span> <span class="n">MetaData</span><span class="p">(</span><span class="n">bind</span><span class="o">=</span><span class="n">engine</span><span class="p">)</span>
+<span class="n">Base</span> <span class="o">=</span> <span class="n">get_declarative_base</span><span class="p">(</span><span class="n">metadata</span><span class="o">=</span><span class="n">metadata</span><span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Kafka</span><span class="p">(</span><span class="n">Engine</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">broker_list</span><span class="p">,</span> <span class="n">topic_list</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">broker_list</span> <span class="o">=</span> <span class="n">broker_list</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">topic_list</span> <span class="o">=</span> <span class="n">topic_list</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Kafka</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="nb">super</span><span class="p">(</span><span class="n">Kafka</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">name</span> <span class="o">+</span> <span class="s1">&#39;()&#39;</span> <span class="o">+</span>
+            <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">SETTINGS kafka_broker_list=</span><span class="si">{}</span><span class="s1">,&#39;</span>
+            <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">kafka_topic_list=</span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">broker_list</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">topic_list</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+<span class="n">table</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span>
+    <span class="s1">&#39;test&#39;</span><span class="p">,</span> <span class="n">metadata</span><span class="p">,</span>
+    <span class="n">Column</span><span class="p">(</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">),</span>
+    <span class="n">Kafka</span><span class="p">(</span>
+        <span class="n">broker_list</span><span class="o">=</span><span class="s1">&#39;host:port&#39;</span><span class="p">,</span>
+        <span class="n">topic_list</span> <span class="o">=</span> <span class="s1">&#39;topic1,topic2,...&#39;</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+</section>
+<section id="materialized-views">
+<h2>Materialized Views<a class="headerlink" href="#materialized-views" title="Link to this heading">¶</a></h2>
+<p>Materialized Views can be defined in the same way as models. Definition consists
+from two steps:</p>
+<ul>
+<li><p>storage definition (table that will store data);</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SELECT</span></code> query definition.</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">clickhouse_sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">MaterializedView</span><span class="p">,</span> <span class="n">select</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Statistics</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>
+    <span class="n">date</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">sign</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int8</span><span class="p">,</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">grouping</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">,</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">metric1</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">,</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">CollapsingMergeTree</span><span class="p">(</span>
+            <span class="n">sign</span><span class="p">,</span>
+            <span class="n">partition_by</span><span class="o">=</span><span class="n">func</span><span class="o">.</span><span class="n">toYYYYMM</span><span class="p">(</span><span class="n">date</span><span class="p">),</span>
+            <span class="n">order_by</span><span class="o">=</span><span class="p">(</span><span class="n">date</span><span class="p">,</span> <span class="n">grouping</span><span class="p">)</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="c1"># Define storage for Materialized View</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GroupedStatistics</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>
+    <span class="n">date</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">metric1</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">,</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">SummingMergeTree</span><span class="p">(</span>
+            <span class="n">partition_by</span><span class="o">=</span><span class="n">func</span><span class="o">.</span><span class="n">toYYYYMM</span><span class="p">(</span><span class="n">date</span><span class="p">),</span>
+            <span class="n">order_by</span><span class="o">=</span><span class="p">(</span><span class="n">date</span><span class="p">,</span> <span class="p">)</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="n">Stat</span> <span class="o">=</span> <span class="n">Statistics</span>
+
+<span class="c1"># Define SELECT for Materialized View</span>
+<span class="n">MatView</span> <span class="o">=</span> <span class="n">MaterializedView</span><span class="p">(</span><span class="n">GroupedStatistics</span><span class="p">,</span> <span class="n">select</span><span class="p">([</span>
+    <span class="n">Stat</span><span class="o">.</span><span class="n">date</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s1">&#39;date&#39;</span><span class="p">),</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">Stat</span><span class="o">.</span><span class="n">metric1</span> <span class="o">*</span> <span class="n">Stat</span><span class="o">.</span><span class="n">sign</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s1">&#39;metric1&#39;</span><span class="p">)</span>
+<span class="p">])</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+    <span class="n">Stat</span><span class="o">.</span><span class="n">grouping</span> <span class="o">&gt;</span> <span class="mi">42</span>
+<span class="p">)</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span>
+    <span class="n">Stat</span><span class="o">.</span><span class="n">date</span>
+<span class="p">))</span>
+
+<span class="n">Stat</span><span class="o">.</span><span class="n">__table__</span><span class="o">.</span><span class="n">create</span><span class="p">()</span>
+<span class="n">MatView</span><span class="o">.</span><span class="n">create</span><span class="p">()</span>
+</pre></div>
+</div>
+</div></blockquote>
+</li>
+</ul>
+<p>Defining materialized views in code is useful for further migrations.
+Autogeneration can reduce possible human errors in case of columns and
+materialized views.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Currently it’s not possible to detect <strong>database</strong> engine during startup. It’s
+required to specify whether or not materialized view will use <code class="docutils literal notranslate"><span class="pre">TO</span> <span class="pre">[db.]name</span></code>
+syntax.</p>
+</div>
+<p>There are two database engines now: Ordinary and Atomic.</p>
+<p>If your database has <code class="docutils literal notranslate"><span class="pre">Ordinary</span></code> engine inner table will be created
+automatically for materialized view. You can control name generation only by
+defining class for inner table with appropriate name.
+<code class="docutils literal notranslate"><span class="pre">class</span> <span class="pre">GroupedStatistics</span></code> in example above.</p>
+<p>If your database has <code class="docutils literal notranslate"><span class="pre">Atomic</span></code> engine inner tables are not used for
+materialized view you must add <code class="docutils literal notranslate"><span class="pre">use_to</span></code> for materialized view object:
+<code class="docutils literal notranslate"><span class="pre">MaterializedView(...,</span> <span class="pre">use_to=True)</span></code>. You can optionally specify materialized
+view name with <code class="docutils literal notranslate"><span class="pre">name=...</span></code>. By default view name is table name with
+<code class="docutils literal notranslate"><span class="pre">mv_suffix='_mv'</span></code>.</p>
+<p>Examples:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">MaterializedView(TestTable,</span> <span class="pre">use_to=True)</span></code> is declaration of materialized
+view <code class="docutils literal notranslate"><span class="pre">test_table_mv</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MaterializedView(TestTable,</span> <span class="pre">use_to=True,</span> <span class="pre">name='my_mv')</span></code> is declaration of
+materialized  view <code class="docutils literal notranslate"><span class="pre">my_mv</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MaterializedView(TestTable,</span> <span class="pre">use_to=True,</span> <span class="pre">mv_suffix='_mat_view')</span></code> is
+declaration of materialized  view <code class="docutils literal notranslate"><span class="pre">test_table_mat_view</span></code>.</p></li>
+</ul>
+<p>You can specify cluster for materialized view in inner table definition.</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">GroupedStatistics</span><span class="p">(</span><span class="o">...</span><span class="p">):</span>
+    <span class="o">...</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">ReplicatedSummingMergeTree</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
+        <span class="p">{</span><span class="s1">&#39;clickhouse_cluster&#39;</span><span class="p">:</span> <span class="s1">&#39;my_cluster&#39;</span><span class="p">}</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Materialized views can also store the aggregated data in a table using the
+<code class="docutils literal notranslate"><span class="pre">AggregatingMergeTree</span></code> engine. The aggregate columns are defined using
+<code class="docutils literal notranslate"><span class="pre">AggregateFunction</span></code> or <code class="docutils literal notranslate"><span class="pre">SimpleAggregateFunction</span></code>.</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Define storage for Materialized View</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GroupedStatistics</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>
+    <span class="n">date</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">Date</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">metric1</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">SimpleAggregateFunction</span><span class="p">(</span><span class="n">sa</span><span class="o">.</span><span class="n">func</span><span class="o">.</span><span class="n">sum</span><span class="p">(),</span> <span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">),</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="n">__table_args__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">engines</span><span class="o">.</span><span class="n">AggregatingMergeTree</span><span class="p">(</span>
+            <span class="n">partition_by</span><span class="o">=</span><span class="n">func</span><span class="o">.</span><span class="n">toYYYYMM</span><span class="p">(</span><span class="n">date</span><span class="p">),</span>
+            <span class="n">order_by</span><span class="o">=</span><span class="p">(</span><span class="n">date</span><span class="p">,</span> <span class="p">)</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="basic-ddl-support">
+<h2>Basic DDL support<a class="headerlink" href="#basic-ddl-support" title="Link to this heading">¶</a></h2>
+<p>You can emit simple DDL. Example <code class="docutils literal notranslate"><span class="pre">CREATE</span></code> / <code class="docutils literal notranslate"><span class="pre">DROP</span></code> table:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">table</span> <span class="o">=</span> <span class="n">Rate</span><span class="o">.</span><span class="n">__table__</span>
+<span class="n">table</span><span class="o">.</span><span class="n">create</span><span class="p">()</span>
+<span class="n">another_table</span><span class="o">.</span><span class="n">create</span><span class="p">()</span>
+
+<span class="n">another_table</span><span class="o">.</span><span class="n">drop</span><span class="p">()</span>
+<span class="n">table</span><span class="o">.</span><span class="n">drop</span><span class="p">()</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="query-method-chaining">
+<h2>Query method chaining<a class="headerlink" href="#query-method-chaining" title="Link to this heading">¶</a></h2>
+<p>Common <code class="docutils literal notranslate"><span class="pre">order_by</span></code>, <code class="docutils literal notranslate"><span class="pre">filter</span></code>, <code class="docutils literal notranslate"><span class="pre">limit</span></code>, <code class="docutils literal notranslate"><span class="pre">offset</span></code>, etc. are supported
+alongside with ClickHouse specific <code class="docutils literal notranslate"><span class="pre">final</span></code> and others.</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Rate</span><span class="o">.</span><span class="n">day</span><span class="p">))</span> \
+    <span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">Rate</span><span class="o">.</span><span class="n">day</span> <span class="o">&gt;</span> <span class="n">today</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="mi">20</span><span class="p">))</span> \
+    <span class="o">.</span><span class="n">scalar</span><span class="p">()</span>
+
+<span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">Rate</span><span class="o">.</span><span class="n">value</span><span class="p">)</span> \
+    <span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="n">Rate</span><span class="o">.</span><span class="n">day</span><span class="o">.</span><span class="n">desc</span><span class="p">())</span> \
+    <span class="o">.</span><span class="n">first</span><span class="p">()</span>
+
+<span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">Rate</span><span class="o">.</span><span class="n">value</span><span class="p">)</span> \
+    <span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="n">Rate</span><span class="o">.</span><span class="n">day</span><span class="p">)</span> \
+    <span class="o">.</span><span class="n">limit</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span> \
+    <span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+<span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">Rate</span><span class="o">.</span><span class="n">value</span><span class="p">))</span> \
+    <span class="o">.</span><span class="n">scalar</span><span class="p">()</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="insert">
+<h2>INSERT<a class="headerlink" href="#insert" title="Link to this heading">¶</a></h2>
+<p>Simple batch INSERT:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">date</span><span class="p">,</span> <span class="n">timedelta</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">func</span>
+
+<span class="n">today</span> <span class="o">=</span> <span class="n">date</span><span class="o">.</span><span class="n">today</span><span class="p">()</span>
+<span class="n">rates</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">{</span><span class="s1">&#39;day&#39;</span><span class="p">:</span> <span class="n">today</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">i</span><span class="p">),</span> <span class="s1">&#39;value&#39;</span><span class="p">:</span> <span class="mi">200</span> <span class="o">-</span> <span class="n">i</span><span class="p">}</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
+<span class="p">]</span>
+
+<span class="c1"># Emits single INSERT statement.</span>
+<span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">insert</span><span class="p">(),</span> <span class="n">rates</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>INSERT FROM SELECT statement:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast</span>
+
+<span class="c1"># Labels must be present.</span>
+<span class="n">select_query</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span>
+    <span class="n">Rate</span><span class="o">.</span><span class="n">day</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s1">&#39;day&#39;</span><span class="p">),</span>
+    <span class="n">cast</span><span class="p">(</span><span class="n">Rate</span><span class="o">.</span><span class="n">value</span> <span class="o">*</span> <span class="mf">1.5</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">Int32</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s1">&#39;value&#39;</span><span class="p">)</span>
+<span class="p">)</span><span class="o">.</span><span class="n">subquery</span><span class="p">()</span>
+
+<span class="c1"># Emits single INSERT FROM SELECT statement</span>
+<span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+    <span class="n">another_table</span><span class="o">.</span><span class="n">insert</span><span class="p">()</span>
+    <span class="o">.</span><span class="n">from_select</span><span class="p">([</span><span class="s1">&#39;day&#39;</span><span class="p">,</span> <span class="s1">&#39;value&#39;</span><span class="p">],</span> <span class="n">select_query</span><span class="p">)</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="update-and-delete">
+<h2>UPDATE and DELETE<a class="headerlink" href="#update-and-delete" title="Link to this heading">¶</a></h2>
+<p>SQLAlchemy’s update statement are mapped into ClickHouse’s <code class="docutils literal notranslate"><span class="pre">ALTER</span> <span class="pre">UPDATE</span></code></p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">tbl</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">t1</span><span class="o">.</span><span class="n">update</span><span class="p">()</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">t1</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span> <span class="o">==</span> <span class="mi">25</span><span class="p">)</span><span class="o">.</span><span class="n">values</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>or</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">tbl</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">update</span><span class="p">(</span><span class="n">t1</span><span class="p">)</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">t1</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span> <span class="o">==</span> <span class="mi">25</span><span class="p">)</span><span class="o">.</span><span class="n">values</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>becomes</p>
+<blockquote>
+<div><div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">UPDATE</span><span class="w"> </span><span class="n">x</span><span class="o">=</span><span class="mi">5</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">x</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">25</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Delete statement is also supported and mapped into <code class="docutils literal notranslate"><span class="pre">ALTER</span> <span class="pre">DELETE</span></code></p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">tbl</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">t1</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">t1</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span> <span class="o">==</span> <span class="mi">25</span><span class="p">))</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>or</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">tbl</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">delete</span><span class="p">(</span><span class="n">t1</span><span class="p">)</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">t1</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span> <span class="o">==</span> <span class="mi">25</span><span class="p">))</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>becomes</p>
+<blockquote>
+<div><div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">DELETE</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">x</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">25</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Many other SQLAlchemy features are supported out of the box. UNION ALL example:</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">union_all</span>
+
+<span class="n">select_rate</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span>
+    <span class="n">Rate</span><span class="o">.</span><span class="n">day</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s1">&#39;date&#39;</span><span class="p">),</span>
+    <span class="n">Rate</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s1">&#39;x&#39;</span><span class="p">)</span>
+<span class="p">)</span>
+<span class="n">select_another_rate</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span>
+    <span class="n">another_table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">day</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s1">&#39;date&#39;</span><span class="p">),</span>
+    <span class="n">another_table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s1">&#39;x&#39;</span><span class="p">)</span>
+<span class="p">)</span>
+
+<span class="n">union_all</span><span class="p">(</span><span class="n">select_rate</span><span class="p">,</span> <span class="n">select_another_rate</span><span class="p">)</span> \
+    <span class="o">.</span><span class="n">execute</span><span class="p">()</span> \
+    <span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="select-extensions">
+<h2>SELECT extensions<a class="headerlink" href="#select-extensions" title="Link to this heading">¶</a></h2>
+<p>Dialect supports some ClickHouse extensions for <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> query.</p>
+<section id="sample">
+<h3>SAMPLE<a class="headerlink" href="#sample" title="Link to this heading">¶</a></h3>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>or</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">select</span><span class="p">([</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">])</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>becomes</p>
+<blockquote>
+<div><div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="n">SAMPLE</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">1</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="limit-by">
+<h3>LIMIT BY<a class="headerlink" href="#limit-by" title="Link to this heading">¶</a></h3>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span> \
+    <span class="o">.</span><span class="n">limit_by</span><span class="p">([</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">],</span> <span class="n">offset</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>or</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">select</span><span class="p">([</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">])</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span> \
+    <span class="o">.</span><span class="n">limit_by</span><span class="p">([</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">],</span> <span class="n">offset</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>becomes</p>
+<blockquote>
+<div><div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="p">...</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="lambda">
+<h3>Lambda<a class="headerlink" href="#lambda" title="Link to this heading">¶</a></h3>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">clickhouse_sqlalchemy.ext.clauses</span><span class="w"> </span><span class="kn">import</span> <span class="n">Lambda</span>
+
+<span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">arrayFilter</span><span class="p">(</span>
+        <span class="n">Lambda</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">like</span><span class="p">(</span><span class="s1">&#39;%World%&#39;</span><span class="p">)),</span>
+        <span class="n">literal</span><span class="p">(</span>
+            <span class="p">[</span><span class="s1">&#39;Hello&#39;</span><span class="p">,</span> <span class="s1">&#39;abc World&#39;</span><span class="p">],</span>
+            <span class="n">types</span><span class="o">.</span><span class="n">Array</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">String</span><span class="p">)</span>
+        <span class="p">)</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s1">&#39;test&#39;</span><span class="p">)</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>becomes</p>
+<blockquote>
+<div><div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="n">arrayFilter</span><span class="p">(</span>
+<span class="w">    </span><span class="n">x</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">x</span><span class="w"> </span><span class="k">LIKE</span><span class="w"> </span><span class="s1">&#39;%%World%%&#39;</span><span class="p">,</span>
+<span class="w">    </span><span class="p">[</span><span class="s1">&#39;Hello&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;abc World&#39;</span><span class="p">]</span>
+<span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">test</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="join">
+<h3>JOIN<a class="headerlink" href="#join" title="Link to this heading">¶</a></h3>
+<p>ClickHouse’s join is bit more powerful than usual SQL join. In this dialect
+join is parametrized with following arguments:</p>
+<ul class="simple">
+<li><p>type: <code class="docutils literal notranslate"><span class="pre">INNER|LEFT|RIGHT|FULL|CROSS</span></code></p></li>
+<li><p>strictness: <code class="docutils literal notranslate"><span class="pre">OUTER|SEMI|ANTI|ANY|ASOF</span></code></p></li>
+<li><p>distribution: <code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code></p></li>
+</ul>
+<p>Here are some examples</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">t1</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">t2</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+    <span class="n">t2</span><span class="p">,</span>
+    <span class="n">t1</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span> <span class="o">==</span> <span class="n">t2</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">y</span><span class="p">,</span>
+    <span class="nb">type</span><span class="o">=</span><span class="s1">&#39;inner&#39;</span><span class="p">,</span>
+    <span class="n">strictness</span><span class="o">=</span><span class="s1">&#39;all&#39;</span><span class="p">,</span>
+    <span class="n">distribution</span><span class="o">=</span><span class="s1">&#39;global&#39;</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>or</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">select</span><span class="p">([</span><span class="n">t1</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">t2</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">])</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+    <span class="n">t2</span><span class="p">,</span>
+    <span class="n">t1</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span> <span class="o">==</span> <span class="n">t2</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">y</span><span class="p">,</span>
+    <span class="nb">type</span><span class="o">=</span><span class="s1">&#39;inner&#39;</span><span class="p">,</span>
+    <span class="n">strictness</span><span class="o">=</span><span class="s1">&#39;all&#39;</span><span class="p">,</span>
+    <span class="n">distribution</span><span class="o">=</span><span class="s1">&#39;global&#39;</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>becomes</p>
+<blockquote>
+<div><div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">GLOBAL</span><span class="w"> </span><span class="k">ALL</span><span class="w"> </span><span class="k">INNER</span><span class="w"> </span><span class="k">JOIN</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="p">...</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>You can also control join parameters with native SQLAlchemy options as well:
+<code class="docutils literal notranslate"><span class="pre">isouter</span></code> and <code class="docutils literal notranslate"><span class="pre">full</span></code>.</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">t1</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">t2</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+    <span class="n">t2</span><span class="p">,</span>
+    <span class="n">t1</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span> <span class="o">==</span> <span class="n">t2</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">y</span><span class="p">,</span>
+    <span class="n">isouter</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">full</span><span class="o">=</span><span class="kc">True</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>becomes</p>
+<blockquote>
+<div><div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">FULL</span><span class="w"> </span><span class="k">OUTER</span><span class="w"> </span><span class="k">JOIN</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="p">...</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="array-join">
+<h3>ARRAY JOIN<a class="headerlink" href="#array-join" title="Link to this heading">¶</a></h3>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="o">...</span><span class="p">)</span><span class="o">.</span><span class="n">array_join</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>or</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">select</span><span class="p">([</span><span class="o">...</span><span class="p">])</span><span class="o">.</span><span class="n">array_join</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>becomes</p>
+<blockquote>
+<div><div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="nb">ARRAY</span><span class="w"> </span><span class="k">JOIN</span><span class="w"> </span><span class="p">...</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="with-cube-rollup-totals">
+<h3>WITH CUBE/ROLLUP/TOTALS<a class="headerlink" href="#with-cube-rollup-totals" title="Link to this heading">¶</a></h3>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">with_cube</span><span class="p">()</span>
+<span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">with_rollup</span><span class="p">()</span>
+<span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">with_totals</span><span class="p">()</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>or</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">select</span><span class="p">([</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">])</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">with_cube</span><span class="p">()</span>
+<span class="n">select</span><span class="p">([</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">])</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">with_rollup</span><span class="p">()</span>
+<span class="n">select</span><span class="p">([</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">])</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">with_totals</span><span class="p">()</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>becomes (respectively)</p>
+<blockquote>
+<div><div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">GROUP</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="k">CUBE</span>
+<span class="k">SELECT</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">GROUP</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="k">ROLLUP</span>
+<span class="k">SELECT</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">GROUP</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="n">TOTALS</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="final">
+<h3>FINAL<a class="headerlink" href="#final" title="Link to this heading">¶</a></h3>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Currently <code class="docutils literal notranslate"><span class="pre">FINAL</span></code> clause is supported only for table specified in <code class="docutils literal notranslate"><span class="pre">FROM</span></code> clause. To apply <code class="docutils literal notranslate"><span class="pre">FINAL</span></code> modifier to all tables in a query, settings with “final=1” can be passed using execution options.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">final</span><span class="p">()</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>or</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">select</span><span class="p">([</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">])</span><span class="o">.</span><span class="n">final</span><span class="p">()</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">x</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>becomes</p>
+<blockquote>
+<div><div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">FINAL</span><span class="w"> </span><span class="k">GROUP</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="p">...</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+</section>
+<section id="miscellaneous">
+<h2>Miscellaneous<a class="headerlink" href="#miscellaneous" title="Link to this heading">¶</a></h2>
+<section id="batching">
+<h3>Batching<a class="headerlink" href="#batching" title="Link to this heading">¶</a></h3>
+<p>You may want to fetch very large result sets in chunks.</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="o">...</span><span class="p">)</span><span class="o">.</span><span class="n">yield_per</span><span class="p">(</span><span class="n">N</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<div class="admonition attention">
+<p class="admonition-title">Attention</p>
+<p>This supported only in native driver.</p>
+</div>
+<p>In this case clickhouse-driver’s <code class="docutils literal notranslate"><span class="pre">execute_iter</span></code> is used and setting
+<code class="docutils literal notranslate"><span class="pre">max_block_size</span></code> is set into <code class="docutils literal notranslate"><span class="pre">N</span></code>.</p>
+<p>There is side effect. If next query will be emitted before end of iteration over
+query with yield there will be an error. Example</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">gen</span><span class="p">(</span><span class="n">session</span><span class="p">):</span>
+    <span class="k">yield from</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="o">...</span><span class="p">)</span><span class="o">.</span><span class="n">yield_per</span><span class="p">(</span><span class="n">N</span><span class="p">)</span>
+
+<span class="n">rv</span> <span class="o">=</span> <span class="n">gen</span><span class="p">(</span><span class="n">session</span><span class="p">)</span>
+
+<span class="c1"># There will be an error</span>
+<span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="o">...</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>To avoid this side effect you should create another session</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">another_session</span><span class="p">():</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">engine</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">engine</span> <span class="o">=</span> <span class="n">engine</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">session</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">session</span> <span class="o">=</span> <span class="n">make_session</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">session</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">exc_info</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">gen</span><span class="p">(</span><span class="n">session</span><span class="p">):</span>
+    <span class="k">with</span> <span class="n">another_session</span><span class="p">(</span><span class="n">session</span><span class="o">.</span><span class="n">bind</span><span class="p">)</span> <span class="k">as</span> <span class="n">new_session</span><span class="p">:</span>
+        <span class="k">yield from</span> <span class="n">new_session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="o">...</span><span class="p">)</span><span class="o">.</span><span class="n">yield_per</span><span class="p">(</span><span class="n">N</span><span class="p">)</span>
+
+<span class="n">rv</span> <span class="o">=</span> <span class="n">gen</span><span class="p">(</span><span class="n">session</span><span class="p">)</span>
+
+<span class="c1"># There will be no error</span>
+<span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="o">...</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+<section id="execution-options">
+<h3>Execution options<a class="headerlink" href="#execution-options" title="Link to this heading">¶</a></h3>
+<div class="admonition attention">
+<p class="admonition-title">Attention</p>
+<p>This supported only in native and asynch drivers.</p>
+</div>
+<p>You can override default ClickHouse server settings and pass desired settings
+with  <code class="docutils literal notranslate"><span class="pre">execution_options</span></code>. Set lower priority to query and limit max number
+threads to execute the request</p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">settings</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;max_threads&#39;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s1">&#39;priority&#39;</span><span class="p">:</span> <span class="mi">10</span><span class="p">}</span>
+
+<span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="o">...</span><span class="p">)</span><span class="o">.</span><span class="n">execution_options</span><span class="p">(</span><span class="n">settings</span><span class="o">=</span><span class="n">settings</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>You can pass external tables to ClickHouse server with <code class="docutils literal notranslate"><span class="pre">execution_options</span></code></p>
+<blockquote>
+<div><div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">table</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span>
+    <span class="s1">&#39;ext_table1&#39;</span><span class="p">,</span> <span class="n">metadata</span><span class="p">,</span>
+    <span class="n">Column</span><span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">UInt64</span><span class="p">),</span>
+    <span class="n">Column</span><span class="p">(</span><span class="s1">&#39;name&#39;</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">String</span><span class="p">),</span>
+    <span class="n">clickhouse_data</span><span class="o">=</span><span class="p">[(</span><span class="n">x</span><span class="p">,</span> <span class="s1">&#39;name&#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">)],</span>
+    <span class="n">extend_existing</span><span class="o">=</span><span class="kc">True</span>
+<span class="p">)</span>
+
+<span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">id</span><span class="p">))</span> \
+    <span class="o">.</span><span class="n">execution_options</span><span class="p">(</span><span class="n">external_tables</span><span class="o">=</span><span class="p">[</span><span class="n">table</span><span class="p">])</span>
+    <span class="o">.</span><span class="n">scalar</span><span class="p">()</span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2017-2022, clickhouse-sqlalchemy authors.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 7.4.7</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 0.7.16</a>
+      
+      |
+      <a href="_sources/features.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
