@@ -135,7 +135,8 @@ Publishing docs to GitHub Pages
 
 The ``publish-docs`` workflow builds the Sphinx documentation and publishes the
 HTML output to the ``gh-pages`` branch. It runs automatically after pushes to
-``master`` and can also be triggered manually from the **Actions** tab.
+``master`` or ``fork`` and can also be triggered manually from the
+**Actions** tab.
 
 Repository setup:
 
