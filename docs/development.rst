@@ -129,3 +129,19 @@ Workflows in forked repositories can be used for running tests.
 
 Workflows don't run in forked repositories by default.
 You must enable GitHub Actions in the **Actions** tab of the forked repository.
+
+Publishing docs to GitHub Pages
+-------------------------------
+
+The ``publish-docs`` workflow builds the Sphinx documentation and publishes the
+HTML output to the ``gh-pages`` branch. It runs automatically after pushes to
+``master`` and can also be triggered manually from the **Actions** tab.
+
+Repository setup:
+
+* In **Settings > Actions > General**, set workflow permissions to
+  **Read and write permissions** so ``GITHUB_TOKEN`` can push ``gh-pages``.
+* Run the ``publish-docs`` workflow once, or push to ``master``, so the
+  ``gh-pages`` branch is created.
+* In **Settings > Pages**, set **Source** to **Deploy from a branch**.
+* Select the ``gh-pages`` branch and the ``/ (root)`` folder, then save.

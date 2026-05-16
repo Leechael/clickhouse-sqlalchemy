@@ -97,7 +97,7 @@ html_logo = ""
 html_static_path = ['_static']
 html_theme_options = {
     "description": "ClickHouse dialect for SQLAlchemy",
-    "github_user": "xzkostyan",
+    "github_user": "Leechael",
     "github_repo": "clickhouse-sqlalchemy",
     "fixed_sidebar": True,
     "sidebar_width": '380px',
