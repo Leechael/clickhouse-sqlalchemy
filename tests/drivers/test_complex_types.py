@@ -2,7 +2,7 @@ import enum
 from unittest import TestCase
 from unittest.mock import patch
 
-from sqlalchemy import Column, MetaData, create_engine
+from sqlalchemy import Column, MetaData, create_engine, literal, select
 from sqlalchemy.sql import type_api
 from sqlalchemy.sql.ddl import CreateTable
 
@@ -45,6 +45,21 @@ class ComplexTypeReflectionTestCase(TestCase):
         self.assertEqual(
             {option.name: option.value for option in key_type.enum_class},
             {'hello, world': 1, 'plain': 2}
+        )
+        self.assertEqual(coltype.value_type, types.String)
+
+    def test_reflect_map_with_doubled_quote_enum_key(self):
+        coltype = self._get_type(
+            "Map(Enum8('O''Brien, Jr.' = 1, 'plain' = 2), String)"
+        )
+
+        self.assertIsInstance(coltype, types.Map)
+
+        key_type = type_api.to_instance(coltype.key_type)
+        self.assertIsInstance(key_type, types.Enum8)
+        self.assertEqual(
+            {option.name: option.value for option in key_type.enum_class},
+            {"O'Brien, Jr.": 1, 'plain': 2}
         )
         self.assertEqual(coltype.value_type, types.String)
 
@@ -234,10 +249,45 @@ class NestedTypeLifecycleTestCase(TestCase):
         ):
             types.Nested()
 
+    def test_nested_type_adapt_preserves_columns_for_subclasses(self):
+        class CustomNested(types.Nested):
+            pass
+
+        adapted = self.table.c.members.type.adapt(CustomNested)
+
+        self.assertIsInstance(adapted, CustomNested)
+        self.assertEqual(
+            [column.name for column in adapted.columns],
+            ['name', 'age']
+        )
+
+    def test_nested_type_adapt_rejects_unrelated_type(self):
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            'Nested type adaptation to String is not supported'
+        ):
+            self.table.c.members.type.adapt(types.String)
+
 
 class FlattenedNestedInsertExecutionTestCase(TestCase):
     class StopExecution(Exception):
         pass
+
+    class FakeContext:
+        isinsert = True
+        execution_options = {}
+
+        def __init__(self, table):
+            class Compiled:
+                compiled_parameters = None
+                insert_single_values_expr = None
+
+                def __init__(self, table):
+                    self.statement = table.insert()
+
+            self.compiled = Compiled(table)
+            self.parameters = None
+            self.compiled_parameters = None
 
     def setUp(self):
         self.table = Table(
@@ -249,6 +299,26 @@ class FlattenedNestedInsertExecutionTestCase(TestCase):
                 types.Nested(
                     Column('name', types.String),
                     Column('age', types.UInt8),
+                )
+            ),
+            engines.Memory()
+        )
+        self.multi_nested_table = Table(
+            'family_multi',
+            MetaData(),
+            Column('id', types.UInt32),
+            Column(
+                'members',
+                types.Nested(
+                    Column('name', types.String),
+                    Column('age', types.UInt8),
+                )
+            ),
+            Column(
+                'pets',
+                types.Nested(
+                    Column('name', types.String),
+                    Column('kind', types.String),
                 )
             ),
             engines.Memory()
@@ -348,6 +418,8 @@ class FlattenedNestedInsertExecutionTestCase(TestCase):
         )
 
     def test_flatten_nested_direct_dotted_keys_documented_unsupported(self):
+        # SQLAlchemy Core drops dotted keys that are not Table columns before
+        # the dialect hook sees parameters; stage one documents this behavior.
         statement, parameters = self._execute_with_http_cursor_patch(
             'execute',
             {
@@ -362,6 +434,37 @@ class FlattenedNestedInsertExecutionTestCase(TestCase):
             'INSERT INTO family (id) VALUES (%(id)s)'
         )
         self.assertEqual(parameters, {'id': 1})
+
+    def test_flatten_nested_insert_select_not_expanded(self):
+        captured = []
+
+        def fake_cursor_method(cursor, operation, parameters=None,
+                               context=None):
+            captured.append((operation, parameters))
+            raise self.StopExecution
+
+        with patch.object(
+            ClickHouseDialect_http, '_get_server_version_info',
+            return_value=(24, 8, 1)
+        ), patch.object(
+            ClickHouseDialect_http, '_get_default_schema_name',
+            return_value='default'
+        ), patch.object(
+            connector.Cursor, 'execute', fake_cursor_method
+        ):
+            engine = create_engine('clickhouse://localhost/default')
+            statement = self.table.insert().from_select(
+                ['id'],
+                select(literal(1))
+            )
+            with self.assertRaises(self.StopExecution):
+                with engine.connect() as connection:
+                    connection.execute(statement)
+
+        self.assertEqual(
+            captured[0][0],
+            'INSERT INTO family (id) SELECT %(param_1)s AS anon_1'
+        )
 
     def test_flatten_nested_row_oriented_payload_rejected(self):
         with patch.object(
@@ -450,8 +553,8 @@ class FlattenedNestedInsertExecutionTestCase(TestCase):
         ):
             engine = create_engine('clickhouse://localhost/default')
             with self.assertRaisesRegex(
-                KeyError,
-                "Nested column 'members' is missing child 'age'"
+                ValueError,
+                "Nested column 'members' is missing child keys \\['age'\\]"
             ):
                 with engine.connect() as connection:
                     connection.execute(
@@ -463,3 +566,136 @@ class FlattenedNestedInsertExecutionTestCase(TestCase):
                             },
                         }
                     )
+
+    def test_flatten_nested_extra_child_rejected(self):
+        with patch.object(
+            ClickHouseDialect_http, '_get_server_version_info',
+            return_value=(24, 8, 1)
+        ), patch.object(
+            ClickHouseDialect_http, '_get_default_schema_name',
+            return_value='default'
+        ):
+            engine = create_engine('clickhouse://localhost/default')
+            with self.assertRaisesRegex(
+                ValueError,
+                "Nested column 'members' got unknown child keys \\['typo'\\]"
+            ):
+                with engine.connect() as connection:
+                    connection.execute(
+                        self.table.insert(),
+                        {
+                            'id': 1,
+                            'members': {
+                                'name': ['alice'],
+                                'age': [34],
+                                'typo': ['bad'],
+                            },
+                        }
+                    )
+
+    def test_flatten_nested_batch_rows_must_use_same_columns(self):
+        with patch.object(
+            ClickHouseDialect_http, '_get_server_version_info',
+            return_value=(24, 8, 1)
+        ), patch.object(
+            ClickHouseDialect_http, '_get_default_schema_name',
+            return_value='default'
+        ):
+            engine = create_engine('clickhouse://localhost/default')
+            with self.assertRaisesRegex(
+                ValueError,
+                'Batch INSERT rows must use the same columns after '
+                'Nested expansion'
+            ):
+                engine.dialect._prepare_flattened_nested_insert(
+                    'INSERT',
+                    [
+                        {
+                            'id': 1,
+                            'members': {
+                                'name': ['alice'],
+                                'age': [34],
+                            },
+                        },
+                        {'id': 2},
+                    ],
+                    self.FakeContext(self.table)
+                )
+
+    def test_flatten_nested_multiple_columns_must_use_same_columns(self):
+        with patch.object(
+            ClickHouseDialect_http, '_get_server_version_info',
+            return_value=(24, 8, 1)
+        ), patch.object(
+            ClickHouseDialect_http, '_get_default_schema_name',
+            return_value='default'
+        ):
+            engine = create_engine('clickhouse://localhost/default')
+            with self.assertRaisesRegex(
+                ValueError,
+                'Batch INSERT rows must use the same columns after '
+                'Nested expansion'
+            ):
+                engine.dialect._prepare_flattened_nested_insert(
+                    'INSERT',
+                    [
+                        {
+                            'id': 1,
+                            'members': {
+                                'name': ['alice'],
+                                'age': [34],
+                            },
+                        },
+                        {
+                            'id': 2,
+                            'pets': {
+                                'name': ['fido'],
+                                'kind': ['dog'],
+                            },
+                        },
+                    ],
+                    self.FakeContext(self.multi_nested_table)
+                )
+
+    def test_flatten_nested_schema_qualified_insert_rendering(self):
+        table = Table(
+            'family',
+            MetaData(),
+            Column('id', types.UInt32),
+            Column(
+                'members',
+                types.Nested(
+                    Column('name', types.String),
+                    Column('age', types.UInt8),
+                )
+            ),
+            engines.Memory(),
+            schema='analytics'
+        )
+        self.table = table
+
+        statement, parameters = self._execute_with_http_cursor_patch(
+            'execute',
+            {
+                'id': 1,
+                'members': {
+                    'name': ['alice'],
+                    'age': [34],
+                },
+            }
+        )
+
+        self.assertEqual(
+            statement,
+            'INSERT INTO analytics.family '
+            '(id, members.name, members.age) '
+            'VALUES (%(id)s, %(members.name)s, %(members.age)s)'
+        )
+        self.assertEqual(
+            parameters,
+            {
+                'id': 1,
+                'members.name': ['alice'],
+                'members.age': [34],
+            }
+        )

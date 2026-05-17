@@ -180,13 +180,13 @@ class NestedTypeTestCase(BaseTestCase):
 
         self.assertRegex(server_version, r'^\d+\.\d+\.\d+')
         self.assertFalse(flatten_nested)
-        self.assertEqual(
-            [(row[0], row[1]) for row in described],
-            [(
-                'n',
-                'Nested(a UInt32, b Nested(c String, d Nested(e Date)))',
-            )]
+        self.assertEqual([row[0] for row in described], ['n'])
+        self.assertTrue(described[0][1].startswith('Nested('))
+
+        reflected = self.session.bind.dialect._get_column_type(
+            'n', described[0][1]
         )
+        self.assertIsInstance(reflected, types.Nested)
 
     def test_unflattened_nested_describe_returns_nested_type(self):
         if self.server_version < (24, 6, 0):

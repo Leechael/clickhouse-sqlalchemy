@@ -17,12 +17,22 @@ class Nested(types.TypeEngine):
         super(Nested, self).__init__()
 
     def adapt(self, cls, **kw):
-        if cls is type(self):
+        if not issubclass(cls, Nested):
+            raise NotImplementedError(
+                "Nested type adaptation to %s is not supported" %
+                cls.__name__
+            )
+
+        try:
             typ = cls(*self.columns)
+        except TypeError as exc:
+            raise NotImplementedError(
+                "Nested type adaptation to %s is not supported" %
+                cls.__name__
+            ) from exc
+        else:
             typ._variant_mapping = self._variant_mapping
             return typ
-
-        return super(Nested, self).adapt(cls, **kw)
 
     def copy(self, **kw):
         return self.adapt(self.__class__)
@@ -35,18 +45,16 @@ class Nested(types.TypeEngine):
             except KeyError:
                 raise AttributeError(key)
             else:
-                original_type = sub.type
-                try:
-                    sub.type = Array(sub.type)
-                    expr = NestedColumn(self.expr, sub)
-                    return expr
-                finally:
-                    sub.type = original_type
+                sub = sub._copy()
+                sub.type = Array(sub.type)
+                return NestedColumn(self.expr, sub)
 
     comparator_factory = Comparator
 
 
 class NestedColumn(ColumnClause):
+    # NestedColumn depends on the parent expression plus a synthetic Array
+    # child type, so it opts out of SQLAlchemy's generic cache inheritance.
     inherit_cache = False
 
     def __init__(self, parent, sub_column):

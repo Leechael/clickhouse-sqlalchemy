@@ -13,6 +13,13 @@ def _scan_type_expression(value):
         if quote:
             if ch == '\\':
                 escaped = True
+            elif (
+                ch == quote
+                and quote in ("'", '"')
+                and i + 1 < len(value)
+                and value[i + 1] == quote
+            ):
+                escaped = True
             elif ch == quote:
                 quote = None
             yield i, ch, brackets, quote
@@ -29,34 +36,13 @@ def _scan_type_expression(value):
 
 
 def get_inner_spec(spec):
-    brackets = 0
-    quote = None
-    escaped = False
     offset = spec.find('(')
     if offset == -1:
         return ''
 
-    for i, ch in enumerate(spec[offset:], offset):
-        if escaped:
-            escaped = False
-            continue
-
-        if quote:
-            if ch == '\\':
-                escaped = True
-            elif ch == quote:
-                quote = None
-            continue
-
-        if ch in ("'", '"', '`'):
-            quote = ch
-        elif ch == '(':
-            brackets += 1
-        elif ch == ')':
-            brackets -= 1
-
-        if brackets == 0:
-            return spec[offset + 1:i]
+    for i, ch, bracket_level, quote in _scan_type_expression(spec[offset:]):
+        if ch == ')' and bracket_level == 0 and quote is None:
+            return spec[offset + 1:offset + i]
 
     return spec[offset + 1:]
 

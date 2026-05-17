@@ -17,6 +17,7 @@ class ClickHouseExecutionContext(ClickHouseExecutionContextBase):
 class ClickHouseDialect_http(ClickHouseDialect):
     driver = 'http'
     execution_ctx_cls = ClickHouseExecutionContext
+    renders_insert_values_template = True
 
     supports_statement_cache = True
 

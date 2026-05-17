@@ -123,6 +123,7 @@ class ClickHouseDialect(default.DefaultDialect):
 
     supports_comments = True
     inline_comments = True
+    renders_insert_values_template = False
 
     # Dialect related-features
     supports_delete = True
@@ -429,14 +430,27 @@ class ClickHouseDialect(default.DefaultDialect):
 
         result = []
         escaped = False
-        for ch in value[1:-1]:
+        inner = value[1:-1]
+        quote = value[0]
+        i = 0
+        while i < len(inner):
+            ch = inner[i]
             if escaped:
                 result.append(ch)
                 escaped = False
             elif ch == '\\':
                 escaped = True
+            elif (
+                ch == quote
+                and quote in ("'", '"')
+                and i + 1 < len(inner)
+                and inner[i + 1] == quote
+            ):
+                result.append(ch)
+                i += 1
             else:
                 result.append(ch)
+            i += 1
 
         if escaped:
             result.append('\\')
@@ -445,43 +459,13 @@ class ClickHouseDialect(default.DefaultDialect):
     @staticmethod
     def _parse_options(option_string):
         options = dict()
-        after_name = False
-        escaped = False
-        quote_character = None
-        name = ''
-        value = ''
+        for option in parse_arguments(option_string):
+            if not option:
+                continue
 
-        for ch in option_string:
-            if escaped:
-                name += ch
-                escaped = False  # Accepting escaped character
-
-            elif after_name:
-                if ch in (' ', '='):
-                    pass
-                elif ch == ',':
-                    options[name] = int(value)
-                    after_name = False
-                    name = ''
-                    value = ''  # Reset before collecting new option
-                else:
-                    value += ch
-
-            elif quote_character:
-                if ch == '\\':
-                    escaped = True
-                elif ch == quote_character:
-                    quote_character = None
-                    after_name = True  # Start collecting option value
-                else:
-                    name += ch
-
-            else:
-                if ch == "'":
-                    quote_character = ch
-
-        if after_name:
-            options.setdefault(name, int(value))  # Word after last comma
+            name, value = option.split('=', 1)
+            name = ClickHouseDialect._parse_string_literal(name)
+            options[name] = int(value.strip())
 
         return options
 
@@ -656,9 +640,7 @@ class ClickHouseDialect(default.DefaultDialect):
         if table is None:
             return statement, parameters
 
-        nested_columns = [
-            c for c in table.columns if isinstance(c.type, types.Nested)
-        ]
+        nested_columns = self._get_nested_insert_columns(table)
         if not nested_columns:
             return statement, parameters
 
@@ -693,8 +675,10 @@ class ClickHouseDialect(default.DefaultDialect):
         if not changed:
             return statement, parameters
 
+        self._validate_expanded_nested_rows(expanded)
         statement = self._render_flattened_nested_insert(
-            table, expanded[0], include_values_template=self.driver == 'http'
+            table, expanded[0],
+            include_values_template=self.renders_insert_values_template
         )
         parameters = expanded if is_many else expanded[0]
 
@@ -704,6 +688,34 @@ class ClickHouseDialect(default.DefaultDialect):
             context.compiled_parameters = expanded
 
         return statement, parameters
+
+    @staticmethod
+    def _get_nested_insert_columns(table):
+        cache_key = '_clickhouse_sqlalchemy_nested_insert_columns'
+        nested_columns = getattr(table, cache_key, None)
+        if nested_columns is None:
+            nested_columns = tuple(
+                c for c in table.columns if isinstance(c.type, types.Nested)
+            )
+            setattr(table, cache_key, nested_columns)
+        return nested_columns
+
+    @staticmethod
+    def _validate_expanded_nested_rows(rows):
+        expected = set(rows[0])
+        for index, row in enumerate(rows[1:], 2):
+            current = set(row)
+            if current != expected:
+                raise ValueError(
+                    "Batch INSERT rows must use the same columns after "
+                    "Nested expansion. Row 1 has columns %s, but row %s "
+                    "has columns %s."
+                    % (
+                        sorted(expected),
+                        index,
+                        sorted(current),
+                    )
+                )
 
     @classmethod
     def _flatten_nested_disabled(cls, context, cursor=None):
@@ -750,6 +762,8 @@ class ClickHouseDialect(default.DefaultDialect):
 
     @staticmethod
     def _get_cursor_ch_settings(cursor):
+        # HTTP transport stores query settings here. Native/asynch do not;
+        # their explicit SET flatten_nested guard is tracked separately.
         connection = ClickHouseDialect._get_cursor_connection(cursor)
         transport = getattr(connection, 'transport', None)
         return getattr(transport, 'ch_settings', {}) or {}
@@ -815,12 +829,31 @@ class ClickHouseDialect(default.DefaultDialect):
 
             changed = True
             expanded.pop(column.name)
-            for child in column.type.columns:
-                if child.name not in nested_value:
-                    raise KeyError(
-                        "Nested column '%s' is missing child '%s'" %
-                        (column.name, child.name)
+            child_names = {child.name for child in column.type.columns}
+            provided_names = set(nested_value)
+            extra_names = provided_names - child_names
+            if extra_names:
+                raise ValueError(
+                    "Nested column '%s' got unknown child keys %s. "
+                    "Expected child keys are %s."
+                    % (
+                        column.name,
+                        sorted(extra_names),
+                        sorted(child_names),
                     )
+                )
+            missing_names = child_names - provided_names
+            if missing_names:
+                raise ValueError(
+                    "Nested column '%s' is missing child keys %s. "
+                    "Provided child keys are %s."
+                    % (
+                        column.name,
+                        sorted(missing_names),
+                        sorted(provided_names),
+                    )
+                )
+            for child in column.type.columns:
                 expanded['%s.%s' % (column.name, child.name)] = (
                     nested_value[child.name]
                 )

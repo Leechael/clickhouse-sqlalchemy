@@ -58,6 +58,12 @@ class ParseArgumentsTestCase(TestCase):
         )
         self.assertEqual(
             parse_arguments(
+                "Enum8('O''Brien, Jr.' = 1, 'plain' = 2), String"
+            ),
+            ("Enum8('O''Brien, Jr.' = 1, 'plain' = 2)", "String")
+        )
+        self.assertEqual(
+            parse_arguments(
                 "DateTime64(3, 'America/New_York'), Nullable(String)"
             ),
             ("DateTime64(3, 'America/New_York')", "Nullable(String)")
