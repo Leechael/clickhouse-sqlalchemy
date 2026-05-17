@@ -3,7 +3,7 @@ import enum
 from sqlalchemy import schema, types as sqltypes, util as sa_util, text
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.sql import (
-    compiler, elements
+    compiler, elements, type_api
 )
 from sqlalchemy.util import (
     warn,
@@ -13,7 +13,7 @@ from .compilers.ddlcompiler import ClickHouseDDLCompiler
 from .compilers.sqlcompiler import ClickHouseSQLCompiler
 from .compilers.typecompiler import ClickHouseTypeCompiler
 from .reflection import ClickHouseInspector
-from .util import get_inner_spec, parse_arguments
+from .util import get_inner_spec, parse_arguments, parse_named_type_argument
 from .. import types
 
 # Column specifications
@@ -73,6 +73,7 @@ ischema_names = {
     '_lowcardinality': types.LowCardinality,
     '_tuple': types.Tuple,
     '_map': types.Map,
+    '_nested': types.Nested,
     '_aggregatefunction': types.AggregateFunction,
     '_simpleaggregatefunction': types.SimpleAggregateFunction,
 }
@@ -243,7 +244,7 @@ class ClickHouseDialect(default.DefaultDialect):
 
     def _get_column_type(self, name, spec):
         if spec.startswith('Array'):
-            inner = spec[6:-1]
+            inner = get_inner_spec(spec)
             coltype = self.ischema_names['_array']
             return coltype(self._get_column_type(name, inner))
 
@@ -252,17 +253,17 @@ class ClickHouseDialect(default.DefaultDialect):
             return self.ischema_names['FixedString'](length)
 
         elif spec.startswith('Nullable'):
-            inner = spec[9:-1]
+            inner = get_inner_spec(spec)
             coltype = self.ischema_names['_nullable']
             return coltype(self._get_column_type(name, inner))
 
         elif spec.startswith('LowCardinality'):
-            inner = spec[15:-1]
+            inner = get_inner_spec(spec)
             coltype = self.ischema_names['_lowcardinality']
             return coltype(self._get_column_type(name, inner))
 
         elif spec.startswith('AggregateFunction'):
-            params = spec[18:-1]
+            params = get_inner_spec(spec)
 
             arguments = parse_arguments(params)
             agg_func, inner = arguments[0], arguments[1:]
@@ -275,7 +276,7 @@ class ClickHouseDialect(default.DefaultDialect):
             return coltype(agg_func, *inner_types)
 
         elif spec.startswith('SimpleAggregateFunction'):
-            params = spec[24:-1]
+            params = get_inner_spec(spec)
 
             arguments = parse_arguments(params)
             agg_func, inner = arguments[0], arguments[1:]
@@ -288,22 +289,47 @@ class ClickHouseDialect(default.DefaultDialect):
             return coltype(agg_func, *inner_types)
 
         elif spec.startswith('Tuple'):
-            inner = spec[6:-1]
+            inner = get_inner_spec(spec)
             coltype = self.ischema_names['_tuple']
-            inner_types = [
-                self._get_column_type(name, t.strip())
-                for t in inner.split(',')
-            ]
+            inner_types = []
+            for arg in parse_arguments(inner):
+                arg_name, type_spec = parse_named_type_argument(arg)
+                col_type = self._get_column_type(name, type_spec)
+                if arg_name:
+                    inner_types.append((arg_name, col_type))
+                else:
+                    inner_types.append(col_type)
             return coltype(*inner_types)
 
         elif spec.startswith('Map'):
-            inner = spec[4:-1]
+            inner = get_inner_spec(spec)
             coltype = self.ischema_names['_map']
             inner_types = [
-                self._get_column_type(name, t.strip())
-                for t in inner.split(',', 1)
+                self._get_column_type(name, t)
+                for t in parse_arguments(inner)
             ]
             return coltype(*inner_types)
+
+        elif spec.startswith('Nested'):
+            inner = get_inner_spec(spec)
+            columns = []
+            for arg in parse_arguments(inner):
+                arg_name, type_spec = parse_named_type_argument(arg)
+                if not arg_name:
+                    warn("Did not recognize nested column '%s' of column '%s'"
+                         % (arg, name))
+                    return sqltypes.NullType
+                columns.append(
+                    schema.Column(
+                        arg_name,
+                        type_api.to_instance(
+                            self._get_column_type(arg_name, type_spec)
+                        )
+                    )
+                )
+
+            coltype = self.ischema_names['_nested']
+            return coltype(*columns)
 
         elif spec.startswith('Enum'):
             pos = spec.find('(')
@@ -374,7 +400,7 @@ class ClickHouseDialect(default.DefaultDialect):
         inner_spec = get_inner_spec(spec)
         if not inner_spec:
             return []
-        params = inner_spec.split(',', 1)
+        params = list(parse_arguments(inner_spec))
         params[0] = int(params[0])
         if len(params) > 1:
             params[1] = params[1].strip()
