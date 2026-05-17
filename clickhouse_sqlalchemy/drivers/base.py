@@ -411,7 +411,7 @@ class ClickHouseDialect(default.DefaultDialect):
         params = list(parse_arguments(inner_spec))
         params[0] = int(params[0])
         if len(params) > 1:
-            params[1] = params[1].strip()
+            params[1] = ClickHouseDialect._parse_string_literal(params[1])
         return params
 
     @staticmethod
@@ -419,7 +419,28 @@ class ClickHouseDialect(default.DefaultDialect):
         inner_spec = get_inner_spec(spec)
         if not inner_spec:
             return []
-        return [inner_spec]
+        return [ClickHouseDialect._parse_string_literal(inner_spec)]
+
+    @staticmethod
+    def _parse_string_literal(value):
+        value = value.strip()
+        if len(value) < 2 or value[0] != value[-1] or value[0] not in "'\"":
+            return value
+
+        result = []
+        escaped = False
+        for ch in value[1:-1]:
+            if escaped:
+                result.append(ch)
+                escaped = False
+            elif ch == '\\':
+                escaped = True
+            else:
+                result.append(ch)
+
+        if escaped:
+            result.append('\\')
+        return ''.join(result)
 
     @staticmethod
     def _parse_options(option_string):

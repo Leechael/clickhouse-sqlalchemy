@@ -37,11 +37,9 @@ The target outcome is:
   - Related path: batch insert parameter normalization must not regress when
     one-level `Nested` mappings are expanded.
 - #310: DateTime64 timezone reflection gets extra quoted.
-  - Related path: quoted type arguments must remain stable while making the
-    recursive type splitter quote-aware.
-  - This plan records the current quoted timezone shape as a non-regression
-    guard only. Removing the extra DateTime64 timezone quotes is separate
-    follow-up work for #310.
+  - Related path: quoted type arguments must be split safely, then timezone
+    string literals must be normalized to unquoted Python timezone strings so
+    later DDL/autogenerate rendering does not add a second layer of quotes.
 
 ## Premises And Constraints
 
@@ -285,8 +283,8 @@ Assertions:
 - Top-level type class is correct.
 - Nested type tree is correct.
 - Enum values survive quoted labels and comma-containing enum labels.
-- Quoted string arguments such as DateTime64 timezone values remain stable and
-  are not double-quoted.
+- Quoted string arguments such as DateTime and DateTime64 timezone values are
+  normalized after parsing and are not double-quoted on later rendering.
 - No type degrades to `NullType` unless it is truly unknown.
 
 Required implementation detail:

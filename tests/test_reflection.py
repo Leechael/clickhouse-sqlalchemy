@@ -143,7 +143,7 @@ class ReflectionTestCase(BaseTestCase):
 
         self.assertIsInstance(coltype, types.DateTime64)
         self.assertEqual(coltype.precision, 2)
-        self.assertEqual(coltype.timezone, "'Europe/Moscow'")
+        self.assertEqual(coltype.timezone, 'Europe/Moscow')
 
         coltype = self._type_round_trip(
             types.DateTime64()
@@ -159,7 +159,7 @@ class ReflectionTestCase(BaseTestCase):
         )[0]['type']
 
         self.assertIsInstance(coltype, types.DateTime)
-        self.assertEqual(coltype.timezone, "'Europe/Moscow'")
+        self.assertEqual(coltype.timezone, 'Europe/Moscow')
 
         coltype = self._type_round_trip(
             types.DateTime()

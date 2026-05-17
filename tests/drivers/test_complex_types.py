@@ -76,9 +76,13 @@ class ComplexTypeReflectionTestCase(TestCase):
 
         self.assertIsInstance(coltype, types.DateTime64)
         self.assertEqual(coltype.precision, 3)
-        # This locks the current non-regression shape for #310's shared
-        # quote-aware parser path. Removing the outer quotes is separate work.
-        self.assertEqual(coltype.timezone, "'America/New_York'")
+        self.assertEqual(coltype.timezone, 'America/New_York')
+
+    def test_reflect_datetime_timezone_argument(self):
+        coltype = self._get_type("DateTime('America/New_York')")
+
+        self.assertIsInstance(coltype, types.DateTime)
+        self.assertEqual(coltype.timezone, 'America/New_York')
 
     def test_reflect_aggregate_function_with_parameterized_function(self):
         coltype = self._get_type(
