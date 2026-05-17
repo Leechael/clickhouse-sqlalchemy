@@ -1,4 +1,5 @@
 import enum
+from collections.abc import Mapping
 
 from sqlalchemy import schema, types as sqltypes, util as sa_util, text
 from sqlalchemy.engine import default, reflection
@@ -594,10 +595,148 @@ class ClickHouseDialect(default.DefaultDialect):
         ):
             parameters = None
 
+        statement, parameters = self._prepare_flattened_nested_insert(
+            statement, parameters, context
+        )
         cursor.executemany(statement, parameters, context=context)
 
     def do_execute(self, cursor, statement, parameters, context=None):
+        statement, parameters = self._prepare_flattened_nested_insert(
+            statement, parameters, context
+        )
         cursor.execute(statement, parameters, context=context)
+
+    def _prepare_flattened_nested_insert(
+        self, statement, parameters, context=None
+    ):
+        if not (context and context.isinsert and parameters):
+            return statement, parameters
+
+        compiled = getattr(context, 'compiled', None)
+        insert_stmt = getattr(compiled, 'statement', None)
+        if insert_stmt is None:
+            return statement, parameters
+
+        if (
+            getattr(insert_stmt, 'select', None) is not None or
+            getattr(insert_stmt, '_values', None)
+        ):
+            return statement, parameters
+
+        table = getattr(insert_stmt, 'table', None)
+        if table is None:
+            return statement, parameters
+
+        nested_columns = [
+            c for c in table.columns if isinstance(c.type, types.Nested)
+        ]
+        if not nested_columns:
+            return statement, parameters
+
+        is_many = isinstance(parameters, (list, tuple))
+        rows = parameters if is_many else [parameters]
+        if not all(isinstance(row, Mapping) for row in rows):
+            return statement, parameters
+
+        expanded = []
+        changed = False
+        for row in rows:
+            expanded_row, row_changed = self._expand_nested_insert_row(
+                row, nested_columns
+            )
+            changed = changed or row_changed
+            expanded.append(expanded_row)
+
+        if not changed:
+            return statement, parameters
+
+        statement = self._render_flattened_nested_insert(
+            table, expanded[0], include_values_template=self.driver == 'http'
+        )
+        parameters = expanded if is_many else expanded[0]
+
+        if hasattr(context, 'parameters'):
+            context.parameters = parameters
+        if hasattr(context, 'compiled_parameters'):
+            context.compiled_parameters = expanded
+
+        return statement, parameters
+
+    @staticmethod
+    def _expand_nested_insert_row(row, nested_columns):
+        expanded = dict(row)
+        changed = False
+
+        for column in nested_columns:
+            if column.name not in expanded:
+                continue
+
+            nested_value = expanded[column.name]
+            if isinstance(nested_value, (list, tuple)):
+                raise NotImplementedError(
+                    "Row-oriented Nested payloads are not supported. For "
+                    "flatten_nested=1, use {'%s': {'child': [...]}} "
+                    "instead. flatten_nested=0 insert support is not "
+                    "implemented."
+                    % column.name
+                )
+            if not isinstance(nested_value, Mapping):
+                raise TypeError(
+                    "Nested column '%s' expects a mapping of child names to "
+                    "arrays for flatten_nested=1" % column.name
+                )
+
+            changed = True
+            expanded.pop(column.name)
+            for child in column.type.columns:
+                if child.name not in nested_value:
+                    raise KeyError(
+                        "Nested column '%s' is missing child '%s'" %
+                        (column.name, child.name)
+                    )
+                expanded['%s.%s' % (column.name, child.name)] = (
+                    nested_value[child.name]
+                )
+
+        return expanded, changed
+
+    def _render_flattened_nested_insert(
+        self, table, row, include_values_template
+    ):
+        preparer = self.identifier_preparer
+        columns = []
+        binds = []
+
+        for column in table.columns:
+            if isinstance(column.type, types.Nested):
+                child_keys = [
+                    '%s.%s' % (column.name, child.name)
+                    for child in column.type.columns
+                ]
+                if not all(key in row for key in child_keys):
+                    continue
+
+                for child in column.type.columns:
+                    bind_name = '%s.%s' % (column.name, child.name)
+                    columns.append(
+                        '%s.%s' % (
+                            preparer.quote(column.name),
+                            preparer.quote(child.name)
+                        )
+                    )
+                    binds.append('%%(%s)s' % bind_name)
+                continue
+
+            if column.name in row:
+                columns.append(preparer.format_column(column))
+                binds.append('%%(%s)s' % column.name)
+
+        text = 'INSERT INTO %s (%s) VALUES' % (
+            preparer.format_table(table), ', '.join(columns)
+        )
+        if include_values_template:
+            text += ' (%s)' % ', '.join(binds)
+        return text
 
     def _check_unicode_returns(self, connection, additional_tests=None):
         return True

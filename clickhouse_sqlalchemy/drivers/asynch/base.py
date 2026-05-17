@@ -40,9 +40,15 @@ class ClickHouseDialect_asynch(ClickHouseDialect_native):
         return f(sql, kwargs)
 
     def do_execute(self, cursor, statement, parameters, context=None):
+        statement, parameters = self._prepare_flattened_nested_insert(
+            statement, parameters, context
+        )
         cursor.execute(statement, parameters, context)
 
     def do_executemany(self, cursor, statement, parameters, context=None):
+        statement, parameters = self._prepare_flattened_nested_insert(
+            statement, parameters, context
+        )
         cursor.executemany(statement, parameters, context)
 
 

@@ -16,6 +16,17 @@ class Nested(types.TypeEngine):
         self._columns_dict = {col.name: col for col in columns}
         super(Nested, self).__init__()
 
+    def adapt(self, cls, **kw):
+        if cls is type(self):
+            typ = cls(*self.columns)
+            typ._variant_mapping = self._variant_mapping
+            return typ
+
+        return super(Nested, self).adapt(cls, **kw)
+
+    def copy(self, **kw):
+        return self.adapt(self.__class__)
+
     class Comparator(UserDefinedType.Comparator):
         def __getattr__(self, key):
             str_key = key.rstrip("_")
@@ -36,6 +47,8 @@ class Nested(types.TypeEngine):
 
 
 class NestedColumn(ColumnClause):
+    inherit_cache = False
+
     def __init__(self, parent, sub_column):
         self.parent = parent
         self.sub_column = sub_column
