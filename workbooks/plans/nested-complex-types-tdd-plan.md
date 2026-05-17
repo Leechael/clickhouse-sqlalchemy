@@ -361,8 +361,10 @@ SET flatten_nested = 1
 
 Transport note:
 
-- Native/asynch paths can use an explicit `SET flatten_nested = 1` in the test
-  session.
+- Native/asynch paths should set `flatten_nested` through the execution
+  settings used by the driver for the DDL/DML under test. A bare
+  `SET flatten_nested = 1` is not sufficient for every driver path because
+  some settings are applied per query rather than as durable session state.
 - HTTP may need driver settings/query parameters depending on the existing
   test fixture. The test must assert the setting before creating the table
   instead of relying on a global default.

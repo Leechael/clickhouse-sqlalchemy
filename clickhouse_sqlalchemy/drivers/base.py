@@ -596,18 +596,18 @@ class ClickHouseDialect(default.DefaultDialect):
             parameters = None
 
         statement, parameters = self._prepare_flattened_nested_insert(
-            statement, parameters, context
+            statement, parameters, context, cursor
         )
         cursor.executemany(statement, parameters, context=context)
 
     def do_execute(self, cursor, statement, parameters, context=None):
         statement, parameters = self._prepare_flattened_nested_insert(
-            statement, parameters, context
+            statement, parameters, context, cursor
         )
         cursor.execute(statement, parameters, context=context)
 
     def _prepare_flattened_nested_insert(
-        self, statement, parameters, context=None
+        self, statement, parameters, context=None, cursor=None
     ):
         if not (context and context.isinsert and parameters):
             return statement, parameters
@@ -638,6 +638,20 @@ class ClickHouseDialect(default.DefaultDialect):
         if not all(isinstance(row, Mapping) for row in rows):
             return statement, parameters
 
+        if self._flatten_nested_disabled(context, cursor):
+            if any(
+                column.name in row
+                for row in rows
+                for column in nested_columns
+            ):
+                raise NotImplementedError(
+                    "flatten_nested=0 insert support is not implemented. "
+                    "Use flatten_nested=1 with {'nested': {'child': [...]}} "
+                    "or issue raw ClickHouse SQL for unflattened Nested "
+                    "payloads."
+                )
+            return statement, parameters
+
         expanded = []
         changed = False
         for row in rows:
@@ -661,6 +675,34 @@ class ClickHouseDialect(default.DefaultDialect):
             context.compiled_parameters = expanded
 
         return statement, parameters
+
+    @classmethod
+    def _flatten_nested_disabled(cls, context, cursor=None):
+        execution_options = getattr(context, 'execution_options', {}) or {}
+        settings = execution_options.get('settings') or {}
+        if cls._is_false_setting(settings.get('flatten_nested')):
+            return True
+
+        transport_settings = cls._get_cursor_ch_settings(cursor)
+        return cls._is_false_setting(transport_settings.get('flatten_nested'))
+
+    @staticmethod
+    def _get_cursor_ch_settings(cursor):
+        connection = getattr(cursor, '_connection', None)
+        transport = getattr(connection, 'transport', None)
+        return getattr(transport, 'ch_settings', {}) or {}
+
+    @staticmethod
+    def _is_false_setting(value):
+        if value is None:
+            return False
+        if isinstance(value, bool):
+            return not value
+        if isinstance(value, int):
+            return value == 0
+        if isinstance(value, str):
+            return value.strip().lower() in ('0', 'false')
+        return False
 
     @staticmethod
     def _expand_nested_insert_row(row, nested_columns):

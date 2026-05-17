@@ -406,3 +406,30 @@ class FlattenedNestedInsertExecutionTestCase(TestCase):
                             ],
                         }
                     )
+
+    def test_unflattened_nested_mapping_payload_rejected_with_clear_error(self):
+        with patch.object(
+            ClickHouseDialect_http, '_get_server_version_info',
+            return_value=(24, 8, 1)
+        ), patch.object(
+            ClickHouseDialect_http, '_get_default_schema_name',
+            return_value='default'
+        ):
+            engine = create_engine('clickhouse://localhost/default')
+            with self.assertRaisesRegex(
+                NotImplementedError,
+                'flatten_nested=0 insert support is not implemented'
+            ):
+                with engine.connect() as connection:
+                    connection.execution_options(
+                        settings={'flatten_nested': 0}
+                    ).execute(
+                        self.table.insert(),
+                        {
+                            'id': 1,
+                            'members': {
+                                'name': ['alice'],
+                                'age': [34],
+                            },
+                        }
+                    )
