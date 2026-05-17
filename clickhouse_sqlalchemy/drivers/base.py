@@ -1,4 +1,5 @@
 import enum
+import re
 from collections.abc import Mapping
 
 from sqlalchemy import schema, types as sqltypes, util as sa_util, text
@@ -19,6 +20,12 @@ from .. import types
 
 # Column specifications
 colspecs = {}
+
+
+_flatten_nested_set_re = re.compile(
+    r'^\s*SET\s+flatten_nested\s*=\s*([^,\s;]+)\s*;?\s*$',
+    re.IGNORECASE,
+)
 
 
 # Type converters
@@ -601,6 +608,7 @@ class ClickHouseDialect(default.DefaultDialect):
         cursor.executemany(statement, parameters, context=context)
 
     def do_execute(self, cursor, statement, parameters, context=None):
+        self._remember_flatten_nested_setting(statement, cursor)
         statement, parameters = self._prepare_flattened_nested_insert(
             statement, parameters, context, cursor
         )
@@ -680,17 +688,61 @@ class ClickHouseDialect(default.DefaultDialect):
     def _flatten_nested_disabled(cls, context, cursor=None):
         execution_options = getattr(context, 'execution_options', {}) or {}
         settings = execution_options.get('settings') or {}
-        if cls._is_false_setting(settings.get('flatten_nested')):
+        option_setting = settings.get('flatten_nested')
+        if cls._is_false_setting(option_setting):
             return True
+        if cls._is_true_setting(option_setting):
+            return False
 
         transport_settings = cls._get_cursor_ch_settings(cursor)
-        return cls._is_false_setting(transport_settings.get('flatten_nested'))
+        transport_setting = transport_settings.get('flatten_nested')
+        if cls._is_false_setting(transport_setting):
+            return True
+        if cls._is_true_setting(transport_setting):
+            return False
+
+        return cls._is_false_setting(
+            cls._get_remembered_flatten_nested_setting(cursor)
+        )
+
+    @classmethod
+    def _remember_flatten_nested_setting(cls, statement, cursor):
+        if not isinstance(statement, str):
+            return
+
+        match = _flatten_nested_set_re.match(statement)
+        if match is None:
+            return
+
+        connection = cls._get_cursor_connection(cursor)
+        if connection is None:
+            return
+
+        try:
+            setattr(
+                connection,
+                '_clickhouse_sqlalchemy_flatten_nested',
+                match.group(1),
+            )
+        except AttributeError:
+            pass
 
     @staticmethod
     def _get_cursor_ch_settings(cursor):
-        connection = getattr(cursor, '_connection', None)
+        connection = ClickHouseDialect._get_cursor_connection(cursor)
         transport = getattr(connection, 'transport', None)
         return getattr(transport, 'ch_settings', {}) or {}
+
+    @staticmethod
+    def _get_remembered_flatten_nested_setting(cursor):
+        connection = ClickHouseDialect._get_cursor_connection(cursor)
+        return getattr(
+            connection, '_clickhouse_sqlalchemy_flatten_nested', None
+        )
+
+    @staticmethod
+    def _get_cursor_connection(cursor):
+        return getattr(cursor, '_connection', None)
 
     @staticmethod
     def _is_false_setting(value):
@@ -702,6 +754,18 @@ class ClickHouseDialect(default.DefaultDialect):
             return value == 0
         if isinstance(value, str):
             return value.strip().lower() in ('0', 'false')
+        return False
+
+    @staticmethod
+    def _is_true_setting(value):
+        if value is None:
+            return False
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            return value != 0
+        if isinstance(value, str):
+            return value.strip().lower() in ('1', 'true')
         return False
 
     @staticmethod

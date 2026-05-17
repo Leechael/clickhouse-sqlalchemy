@@ -76,6 +76,8 @@ class ComplexTypeReflectionTestCase(TestCase):
 
         self.assertIsInstance(coltype, types.DateTime64)
         self.assertEqual(coltype.precision, 3)
+        # This locks the current non-regression shape for #310's shared
+        # quote-aware parser path. Removing the outer quotes is separate work.
         self.assertEqual(coltype.timezone, "'America/New_York'")
 
     def test_reflect_aggregate_function_with_parameterized_function(self):
@@ -430,6 +432,30 @@ class FlattenedNestedInsertExecutionTestCase(TestCase):
                             'members': {
                                 'name': ['alice'],
                                 'age': [34],
+                            },
+                        }
+                    )
+
+    def test_flatten_nested_missing_child_rejected(self):
+        with patch.object(
+            ClickHouseDialect_http, '_get_server_version_info',
+            return_value=(24, 8, 1)
+        ), patch.object(
+            ClickHouseDialect_http, '_get_default_schema_name',
+            return_value='default'
+        ):
+            engine = create_engine('clickhouse://localhost/default')
+            with self.assertRaisesRegex(
+                KeyError,
+                "Nested column 'members' is missing child 'age'"
+            ):
+                with engine.connect() as connection:
+                    connection.execute(
+                        self.table.insert(),
+                        {
+                            'id': 1,
+                            'members': {
+                                'name': ['alice'],
                             },
                         }
                     )

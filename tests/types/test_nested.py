@@ -218,3 +218,34 @@ class NestedTypeTestCase(BaseTestCase):
         self.assertIsInstance(nested_d, types.Nested)
         self.assertEqual([column.name for column in nested_d.columns], ['e'])
         self.assertIsInstance(nested_d.columns[0].type, types.Date)
+
+    def test_native_session_set_flatten_nested_zero_rejects_mapping_insert(self):
+        if self.session.bind.dialect.driver != 'native':
+            self.skipTest('session-level SET tracking is native-specific')
+
+        table = self._nested_table()
+
+        with self._nested_connection(1) as connection:
+            table.drop(bind=connection, if_exists=True)
+            table.create(bind=connection)
+
+        try:
+            with self.session.bind.connect() as connection:
+                connection.execute(text('SET flatten_nested = 0'))
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    'flatten_nested=0 insert support is not implemented'
+                ):
+                    connection.execute(
+                        table.insert(),
+                        {
+                            'id': 1,
+                            'members': {
+                                'name': ['alice'],
+                                'age': [34],
+                            },
+                        }
+                    )
+        finally:
+            with self.session.bind.connect() as connection:
+                table.drop(bind=connection, if_exists=True)

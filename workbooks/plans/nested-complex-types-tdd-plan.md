@@ -39,6 +39,9 @@ The target outcome is:
 - #310: DateTime64 timezone reflection gets extra quoted.
   - Related path: quoted type arguments must remain stable while making the
     recursive type splitter quote-aware.
+  - This plan records the current quoted timezone shape as a non-regression
+    guard only. Removing the extra DateTime64 timezone quotes is separate
+    follow-up work for #310.
 
 ## Premises And Constraints
 
@@ -152,6 +155,11 @@ explicit conversion feature.
 If a user passes the row-oriented shape in stage one, fail early with a clear
 error and an example of the supported mapping shape. Do not pass it through to
 the driver silently.
+
+The nested mapping shape is strict: when a logical `Nested` column is present
+in a row, all declared child arrays must be present. Partial nested mappings
+raise a client-side error instead of relying on ClickHouse defaults for
+subcolumns.
 
 ### ORM Rule
 
@@ -509,6 +517,12 @@ Feasibility result:
   must call the same helper explicitly. HTTP keeps a `VALUES` template because
   its cursor formats rows client-side; native/asynch keep the native
   `INSERT ... VALUES` shape for driver-side batch parameters.
+- Explicit per-query execution settings are authoritative for detecting
+  `flatten_nested=0`. HTTP transport `ch_settings` are also visible to the
+  hook. Native/asynch simple session statements of the form
+  `SET flatten_nested = 0` or `SET flatten_nested = 1` are tracked on the DBAPI
+  connection so the immediately following structured insert cannot silently
+  expand into dotted arrays. This is intentionally not a general `SET` parser.
 
 ### Level 5: `flatten_nested = 0` Design Guard Tests
 
@@ -562,6 +576,9 @@ Stage-one acceptable behavior:
 - Insert through SQLAlchemy may raise a clear `NotImplementedError` or warning
   for unflattened nested payloads.
 - No silent mis-expansion into dotted arrays.
+- Simple native/asynch `SET flatten_nested = 0` statements are covered by the
+  same no-silent-mis-expansion guard. More complex setting syntax remains
+  outside stage one unless it is added with explicit tests.
 
 Stage-two target behavior:
 
