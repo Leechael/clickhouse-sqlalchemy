@@ -10,6 +10,8 @@ from clickhouse_sqlalchemy import Table, engines, types
 from clickhouse_sqlalchemy.drivers.base import ClickHouseDialect
 from clickhouse_sqlalchemy.drivers.http import connector
 from clickhouse_sqlalchemy.drivers.http.base import ClickHouseDialect_http
+from clickhouse_sqlalchemy.drivers.native import connector as native_connector
+from clickhouse_sqlalchemy.drivers.native.base import ClickHouseDialect_native
 
 
 class ComplexTypeReflectionTestCase(TestCase):
@@ -342,6 +344,32 @@ class FlattenedNestedInsertExecutionTestCase(TestCase):
             connector.Cursor, cursor_method, mocked
         ):
             engine = create_engine('clickhouse://localhost/default')
+            statement = (
+                insert_stmt if insert_stmt is not None
+                else self.table.insert()
+            )
+            with self.assertRaises(self.StopExecution):
+                with engine.connect() as connection:
+                    connection.execute(statement, rows)
+
+        operation, parameters = mocked.call_args.args[:2]
+        return operation, parameters
+
+    def _execute_with_native_cursor_patch(
+        self, cursor_method, rows, insert_stmt=None
+    ):
+        mocked = MagicMock(side_effect=self.StopExecution)
+
+        with patch.object(
+            ClickHouseDialect_native, '_get_server_version_info',
+            return_value=(24, 8, 1)
+        ), patch.object(
+            ClickHouseDialect_native, '_get_default_schema_name',
+            return_value='default'
+        ), patch.object(
+            native_connector.Cursor, cursor_method, mocked
+        ):
+            engine = create_engine('clickhouse+native://localhost/default')
             statement = (
                 insert_stmt if insert_stmt is not None
                 else self.table.insert()
@@ -728,6 +756,34 @@ class FlattenedNestedInsertExecutionTestCase(TestCase):
         )
 
         self.assertIn('IGNORE', statement)
+
+    def test_flatten_nested_native_insert_preserves_prefix_with(self):
+        statement, parameters = self._execute_with_native_cursor_patch(
+            'executemany',
+            {
+                'id': 1,
+                'members': {
+                    'name': ['alice'],
+                    'age': [34],
+                },
+            },
+            insert_stmt=self.table.insert().prefix_with('IGNORE'),
+        )
+
+        self.assertEqual(
+            statement,
+            'INSERT IGNORE INTO family (id, members.name, members.age) VALUES'
+        )
+        self.assertEqual(
+            parameters,
+            [
+                {
+                    'id': 1,
+                    'members.name': ['alice'],
+                    'members.age': [34],
+                }
+            ]
+        )
 
     def test_flatten_nested_schema_qualified_insert_rendering(self):
         table = Table(
