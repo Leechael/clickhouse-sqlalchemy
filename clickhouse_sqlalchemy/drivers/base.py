@@ -104,6 +104,71 @@ class ClickHouseIdentifierPreparer(compiler.IdentifierPreparer):
 
 
 class ClickHouseExecutionContextBase(default.DefaultExecutionContext):
+    @classmethod
+    def _init_compiled(
+        cls, dialect, connection, dbapi_connection, execution_options,
+        compiled, parameters, invoked_statement, extracted_parameters,
+        cache_hit=default.CacheStats.CACHING_DISABLED,
+    ):
+        cls._validate_nested_insert_parameter_groups(compiled, parameters)
+        return super(ClickHouseExecutionContextBase, cls)._init_compiled(
+            dialect, connection, dbapi_connection, execution_options,
+            compiled, parameters, invoked_statement, extracted_parameters,
+            cache_hit=cache_hit,
+        )
+
+    @staticmethod
+    def _validate_nested_insert_parameter_groups(compiled, parameters):
+        if not (getattr(compiled, 'isinsert', False) and parameters):
+            return
+
+        insert_stmt = getattr(compiled, 'statement', None)
+        if insert_stmt is None:
+            return
+
+        if (
+            getattr(insert_stmt, 'select', None) is not None or
+            getattr(insert_stmt, '_values', None)
+        ):
+            return
+
+        table = getattr(insert_stmt, 'table', None)
+        if table is None:
+            return
+
+        nested_columns = ClickHouseDialect._get_nested_insert_columns(table)
+        if not nested_columns:
+            return
+
+        if len(parameters) <= 1:
+            return
+        if not all(isinstance(row, Mapping) for row in parameters):
+            return
+
+        expected = {
+            column.name
+            for row in parameters
+            for column in nested_columns
+            if column.name in row
+        }
+        if not expected:
+            return
+
+        for index, row in enumerate(parameters, 1):
+            present = {
+                column.name
+                for column in nested_columns
+                if column.name in row
+            }
+            if present != expected:
+                raise ValueError(
+                    "Every row in a batch INSERT must include the same "
+                    "Nested columns. Expected Nested columns %s in row %s, "
+                    "but row has %s. Use empty child arrays for rows with no "
+                    "nested values."
+                    % (sorted(expected), index, sorted(present))
+                )
+
     @sa_util.memoized_property
     def should_autocommit(self):
         return False  # No DML supported, never autocommit
@@ -649,7 +714,7 @@ class ClickHouseDialect(default.DefaultDialect):
 
         self._validate_expanded_nested_rows(expanded)
         statement = self._render_flattened_nested_insert(
-            table, expanded[0],
+            table, expanded[0], insert_stmt,
             include_values_template=self.renders_insert_values_template
         )
         parameters = expanded if is_many else expanded[0]
@@ -864,7 +929,7 @@ class ClickHouseDialect(default.DefaultDialect):
         return expanded, changed
 
     def _render_flattened_nested_insert(
-        self, table, row, include_values_template
+        self, table, row, insert_stmt, include_values_template
     ):
         # Caller must validate every expanded row has this same key set before
         # using the first row to render the structured INSERT column list.
@@ -897,12 +962,25 @@ class ClickHouseDialect(default.DefaultDialect):
                 columns.append(preparer.format_column(column))
                 binds.append('%%(%s)s' % column.name)
 
-        text = 'INSERT INTO %s (%s) VALUES' % (
+        prefixes = self._render_insert_prefixes(insert_stmt)
+        text = 'INSERT%s INTO %s (%s) VALUES' % (
+            prefixes,
             preparer.format_table(table), ', '.join(columns)
         )
         if include_values_template:
             text += ' (%s)' % ', '.join(binds)
         return text
+
+    def _render_insert_prefixes(self, insert_stmt):
+        prefixes = []
+        compiler = self.statement_compiler(self, insert_stmt)
+        for clause, dialect_name in getattr(insert_stmt, '_prefixes', ()):
+            if dialect_name in ('*', self.name):
+                prefixes.append(compiler.process(clause))
+
+        if prefixes:
+            return ' ' + ' '.join(prefixes)
+        return ''
 
     def _check_unicode_returns(self, connection, additional_tests=None):
         return True

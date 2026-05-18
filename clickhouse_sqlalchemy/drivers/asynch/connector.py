@@ -1,8 +1,65 @@
 import asyncio
 import inspect
+import re
+from datetime import date, datetime
+from enum import Enum
+from uuid import UUID
 
 from sqlalchemy.engine.interfaces import AdaptedConnection
 from sqlalchemy.util.concurrency import await_only
+from asynch.proto.utils.escape import escape_chars_map, string_types, text_type
+
+
+_pyformat_re = re.compile(r'%\(([^)]+)\)s')
+
+
+def _escape_param(item):
+    if item is None:
+        return "NULL"
+    elif isinstance(item, datetime):
+        if item.microsecond:
+            return "'%s'" % item.strftime("%Y-%m-%d %H:%M:%S.%f")
+        return "'%s'" % item.strftime("%Y-%m-%d %H:%M:%S")
+    elif isinstance(item, date):
+        return "'%s'" % item.strftime("%Y-%m-%d")
+    elif isinstance(item, string_types):
+        return "'%s'" % "".join(escape_chars_map.get(c, c) for c in item)
+    elif isinstance(item, list):
+        return "[%s]" % ", ".join(text_type(_escape_param(x)) for x in item)
+    elif isinstance(item, tuple):
+        return "(%s)" % ", ".join(text_type(_escape_param(x)) for x in item)
+    elif isinstance(item, Enum):
+        return _escape_param(item.value)
+    elif isinstance(item, UUID):
+        return "'%s'" % str(item)
+    else:
+        return str(item)
+
+
+def _substitute_pyformat_params(operation, params):
+    if not isinstance(params, dict) or not _pyformat_re.search(operation):
+        return operation, params
+
+    escaped = {key: _escape_param(value) for key, value in params.items()}
+
+    def replace(match):
+        key = match.group(1)
+        return escaped[key]
+
+    return _pyformat_re.sub(replace, operation), None
+
+
+def _strip_pyformat_values_template(operation, params):
+    if not isinstance(params, (list, tuple)) or not _pyformat_re.search(
+        operation
+    ):
+        return operation, params
+
+    index = operation.upper().rfind('VALUES')
+    if index == -1:
+        return operation, params
+
+    return operation[:index + len('VALUES')], params
 
 
 class AsyncAdapt_asynch_cursor:
@@ -88,6 +145,7 @@ class AsyncAdapt_asynch_cursor:
 
     async def _execute_async(self, operation, params, context):
         async with self._execute_mutex:
+            operation, params = _substitute_pyformat_params(operation, params)
             result = await self._cursor.execute(
                 operation,
                 args=params,
@@ -105,6 +163,9 @@ class AsyncAdapt_asynch_cursor:
 
     async def _executemany_async(self, operation, params, context):
         async with self._execute_mutex:
+            operation, params = _strip_pyformat_values_template(
+                operation, params
+            )
             return await self._cursor.executemany(
                 operation,
                 args=params,
