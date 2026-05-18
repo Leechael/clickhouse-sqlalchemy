@@ -177,7 +177,7 @@ class ClickHouseDialect(default.DefaultDialect):
         self._json_deserializer = json_deserializer
         self._json_serializer = json_serializer
         self._flatten_nested_settings = weakref.WeakKeyDictionary()
-        self._flatten_nested_settings_by_id = {}
+        self._warned_flatten_nested_tracking_unavailable = False
 
     def initialize(self, connection):
         super(ClickHouseDialect, self).initialize(connection)
@@ -729,6 +729,8 @@ class ClickHouseDialect(default.DefaultDialect):
 
     @staticmethod
     def _find_flatten_nested_set_value(settings):
+        # This splitter is only used to locate a scalar flatten_nested
+        # assignment in a SET list. It is not a full ClickHouse SET parser.
         for item in parse_arguments(settings):
             if '=' not in item:
                 continue
@@ -743,7 +745,12 @@ class ClickHouseDialect(default.DefaultDialect):
         try:
             self._flatten_nested_settings[connection] = setting
         except TypeError:
-            self._flatten_nested_settings_by_id[id(connection)] = setting
+            if not self._warned_flatten_nested_tracking_unavailable:
+                warn(
+                    "flatten_nested SET tracking is unavailable for this "
+                    "driver connection because it cannot be weak-referenced"
+                )
+                self._warned_flatten_nested_tracking_unavailable = True
 
     @staticmethod
     def _get_cursor_ch_settings(cursor):
@@ -761,9 +768,7 @@ class ClickHouseDialect(default.DefaultDialect):
         try:
             setting = self._flatten_nested_settings[connection]
         except (KeyError, TypeError):
-            return self._flatten_nested_settings_by_id.get(
-                id(connection)
-            )
+            return None
         else:
             return setting
 
@@ -773,6 +778,7 @@ class ClickHouseDialect(default.DefaultDialect):
 
     @staticmethod
     def _is_false_setting(value):
+        # Accept scalar settings with or without SQL string-literal quotes.
         if value is None:
             return False
         if isinstance(value, bool):
@@ -787,6 +793,7 @@ class ClickHouseDialect(default.DefaultDialect):
 
     @staticmethod
     def _is_true_setting(value):
+        # Accept scalar settings with or without SQL string-literal quotes.
         if value is None:
             return False
         if isinstance(value, bool):

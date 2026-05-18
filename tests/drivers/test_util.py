@@ -1,7 +1,8 @@
 from unittest import TestCase
 
 from clickhouse_sqlalchemy.drivers.util import (
-    get_inner_spec, parse_arguments, parse_named_type_argument
+    get_inner_spec, parse_arguments, parse_named_type_argument,
+    parse_string_literal
 )
 
 
@@ -92,3 +93,14 @@ class ParseNamedTypeArgumentTestCase(TestCase):
             parse_named_type_argument('`full name` String'),
             ('full name', 'String')
         )
+
+
+class ParseStringLiteralTestCase(TestCase):
+    def test_parse_string_literal(self):
+        self.assertEqual(parse_string_literal('0'), '0')
+        self.assertEqual(parse_string_literal("'0'"), '0')
+        self.assertEqual(parse_string_literal('"0"'), '0')
+        self.assertEqual(parse_string_literal(r"'O\\'Brien'"), r"O\'Brien")
+        self.assertEqual(parse_string_literal("'O''Brien'"), "O'Brien")
+        self.assertEqual(parse_string_literal('"a ""quoted"" value"'),
+                         'a "quoted" value')
