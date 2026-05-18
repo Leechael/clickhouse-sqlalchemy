@@ -249,3 +249,67 @@ class NestedTypeTestCase(BaseTestCase):
         finally:
             with self.session.bind.connect() as connection:
                 table.drop(bind=connection, if_exists=True)
+
+    def test_native_set_quoted_flatten_nested_zero_rejects_insert(self):
+        if self.session.bind.dialect.driver != 'native':
+            self.skipTest('session-level SET tracking is native-specific')
+
+        table = self._nested_table()
+
+        with self._nested_connection(1) as connection:
+            table.drop(bind=connection, if_exists=True)
+            table.create(bind=connection)
+
+        try:
+            with self.session.bind.connect() as connection:
+                connection.execute(text("SET flatten_nested = '0'"))
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    'flatten_nested=0 insert support is not implemented'
+                ):
+                    connection.execute(
+                        table.insert(),
+                        {
+                            'id': 1,
+                            'members': {
+                                'name': ['alice'],
+                                'age': [34],
+                            },
+                        }
+                    )
+        finally:
+            with self.session.bind.connect() as connection:
+                table.drop(bind=connection, if_exists=True)
+
+    def test_native_set_list_flatten_nested_zero_rejects_insert(self):
+        if self.session.bind.dialect.driver != 'native':
+            self.skipTest('session-level SET tracking is native-specific')
+
+        table = self._nested_table()
+
+        with self._nested_connection(1) as connection:
+            table.drop(bind=connection, if_exists=True)
+            table.create(bind=connection)
+
+        try:
+            with self.session.bind.connect() as connection:
+                connection.execute(text(
+                    'SET flatten_nested = 0, max_threads = 4'
+                ))
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    'flatten_nested=0 insert support is not implemented'
+                ):
+                    connection.execute(
+                        table.insert(),
+                        {
+                            'id': 1,
+                            'members': {
+                                'name': ['alice'],
+                                'age': [34],
+                            },
+                        }
+                    )
+        finally:
+            with self.session.bind.connect() as connection:
+                table.drop(bind=connection, if_exists=True)

@@ -80,3 +80,37 @@ def parse_named_type_argument(argument):
             break
 
     return None, argument
+
+
+def parse_string_literal(value):
+    value = value.strip()
+    if len(value) < 2 or value[0] != value[-1] or value[0] not in "'\"":
+        return value
+
+    result = []
+    escaped = False
+    inner = value[1:-1]
+    quote = value[0]
+    i = 0
+    while i < len(inner):
+        ch = inner[i]
+        if escaped:
+            result.append(ch)
+            escaped = False
+        elif ch == '\\':
+            escaped = True
+        elif (
+            ch == quote
+            and quote in ("'", '"')
+            and i + 1 < len(inner)
+            and inner[i + 1] == quote
+        ):
+            result.append(ch)
+            i += 1
+        else:
+            result.append(ch)
+        i += 1
+
+    if escaped:
+        result.append('\\')
+    return ''.join(result)

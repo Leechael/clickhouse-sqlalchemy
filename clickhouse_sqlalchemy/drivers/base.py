@@ -1,5 +1,6 @@
 import enum
 import re
+import weakref
 from collections.abc import Mapping
 
 from sqlalchemy import schema, types as sqltypes, util as sa_util, text
@@ -15,7 +16,10 @@ from .compilers.ddlcompiler import ClickHouseDDLCompiler
 from .compilers.sqlcompiler import ClickHouseSQLCompiler
 from .compilers.typecompiler import ClickHouseTypeCompiler
 from .reflection import ClickHouseInspector
-from .util import get_inner_spec, parse_arguments, parse_named_type_argument
+from .util import (
+    get_inner_spec, parse_arguments, parse_named_type_argument,
+    parse_string_literal,
+)
 from .. import types
 
 # Column specifications
@@ -23,7 +27,7 @@ colspecs = {}
 
 
 _flatten_nested_set_re = re.compile(
-    r'^\s*SET\s+flatten_nested\s*=\s*([^,\s;]+)\s*;?\s*$',
+    r'^\s*SET\s+(.+?)\s*;?\s*$',
     re.IGNORECASE,
 )
 
@@ -172,6 +176,8 @@ class ClickHouseDialect(default.DefaultDialect):
         default.DefaultDialect.__init__(self, **kwargs)
         self._json_deserializer = json_deserializer
         self._json_serializer = json_serializer
+        self._flatten_nested_settings = weakref.WeakKeyDictionary()
+        self._flatten_nested_settings_by_id = {}
 
     def initialize(self, connection):
         super(ClickHouseDialect, self).initialize(connection)
@@ -412,7 +418,7 @@ class ClickHouseDialect(default.DefaultDialect):
         params = list(parse_arguments(inner_spec))
         params[0] = int(params[0])
         if len(params) > 1:
-            params[1] = ClickHouseDialect._parse_string_literal(params[1])
+            params[1] = parse_string_literal(params[1])
         return params
 
     @staticmethod
@@ -420,41 +426,7 @@ class ClickHouseDialect(default.DefaultDialect):
         inner_spec = get_inner_spec(spec)
         if not inner_spec:
             return []
-        return [ClickHouseDialect._parse_string_literal(inner_spec)]
-
-    @staticmethod
-    def _parse_string_literal(value):
-        value = value.strip()
-        if len(value) < 2 or value[0] != value[-1] or value[0] not in "'\"":
-            return value
-
-        result = []
-        escaped = False
-        inner = value[1:-1]
-        quote = value[0]
-        i = 0
-        while i < len(inner):
-            ch = inner[i]
-            if escaped:
-                result.append(ch)
-                escaped = False
-            elif ch == '\\':
-                escaped = True
-            elif (
-                ch == quote
-                and quote in ("'", '"')
-                and i + 1 < len(inner)
-                and inner[i + 1] == quote
-            ):
-                result.append(ch)
-                i += 1
-            else:
-                result.append(ch)
-            i += 1
-
-        if escaped:
-            result.append('\\')
-        return ''.join(result)
+        return [parse_string_literal(inner_spec)]
 
     @staticmethod
     def _parse_options(option_string):
@@ -464,7 +436,7 @@ class ClickHouseDialect(default.DefaultDialect):
                 continue
 
             name, value = option.split('=', 1)
-            name = ClickHouseDialect._parse_string_literal(name)
+            name = parse_string_literal(name)
             options[name] = int(value.strip())
 
         return options
@@ -717,29 +689,27 @@ class ClickHouseDialect(default.DefaultDialect):
                     )
                 )
 
-    @classmethod
-    def _flatten_nested_disabled(cls, context, cursor=None):
+    def _flatten_nested_disabled(self, context, cursor=None):
         execution_options = getattr(context, 'execution_options', {}) or {}
         settings = execution_options.get('settings') or {}
         option_setting = settings.get('flatten_nested')
-        if cls._is_false_setting(option_setting):
+        if self._is_false_setting(option_setting):
             return True
-        if cls._is_true_setting(option_setting):
+        if self._is_true_setting(option_setting):
             return False
 
-        transport_settings = cls._get_cursor_ch_settings(cursor)
+        transport_settings = self._get_cursor_ch_settings(cursor)
         transport_setting = transport_settings.get('flatten_nested')
-        if cls._is_false_setting(transport_setting):
+        if self._is_false_setting(transport_setting):
             return True
-        if cls._is_true_setting(transport_setting):
+        if self._is_true_setting(transport_setting):
             return False
 
-        return cls._is_false_setting(
-            cls._get_remembered_flatten_nested_setting(cursor)
+        return self._is_false_setting(
+            self._get_remembered_flatten_nested_setting(cursor)
         )
 
-    @classmethod
-    def _remember_flatten_nested_setting(cls, statement, cursor):
+    def _remember_flatten_nested_setting(self, statement, cursor):
         if not isinstance(statement, str):
             return
 
@@ -747,18 +717,33 @@ class ClickHouseDialect(default.DefaultDialect):
         if match is None:
             return
 
-        connection = cls._get_cursor_connection(cursor)
+        connection = self._get_cursor_connection(cursor)
         if connection is None:
             return
 
+        setting = self._find_flatten_nested_set_value(match.group(1))
+        if setting is None:
+            return
+
+        self._remember_connection_flatten_nested(connection, setting)
+
+    @staticmethod
+    def _find_flatten_nested_set_value(settings):
+        for item in parse_arguments(settings):
+            if '=' not in item:
+                continue
+
+            key, value = item.split('=', 1)
+            key = key.strip().strip('`"').lower()
+            if key == 'flatten_nested':
+                return parse_string_literal(value)
+        return None
+
+    def _remember_connection_flatten_nested(self, connection, setting):
         try:
-            setattr(
-                connection,
-                '_clickhouse_sqlalchemy_flatten_nested',
-                match.group(1),
-            )
-        except AttributeError:
-            pass
+            self._flatten_nested_settings[connection] = setting
+        except TypeError:
+            self._flatten_nested_settings_by_id[id(connection)] = setting
 
     @staticmethod
     def _get_cursor_ch_settings(cursor):
@@ -768,12 +753,19 @@ class ClickHouseDialect(default.DefaultDialect):
         transport = getattr(connection, 'transport', None)
         return getattr(transport, 'ch_settings', {}) or {}
 
-    @staticmethod
-    def _get_remembered_flatten_nested_setting(cursor):
+    def _get_remembered_flatten_nested_setting(self, cursor):
         connection = ClickHouseDialect._get_cursor_connection(cursor)
-        return getattr(
-            connection, '_clickhouse_sqlalchemy_flatten_nested', None
-        )
+        if connection is None:
+            return None
+
+        try:
+            setting = self._flatten_nested_settings[connection]
+        except (KeyError, TypeError):
+            return self._flatten_nested_settings_by_id.get(
+                id(connection)
+            )
+        else:
+            return setting
 
     @staticmethod
     def _get_cursor_connection(cursor):
@@ -788,7 +780,9 @@ class ClickHouseDialect(default.DefaultDialect):
         if isinstance(value, int):
             return value == 0
         if isinstance(value, str):
-            return value.strip().lower() in ('0', 'false')
+            return parse_string_literal(value).strip().lower() in (
+                '0', 'false'
+            )
         return False
 
     @staticmethod
@@ -800,7 +794,9 @@ class ClickHouseDialect(default.DefaultDialect):
         if isinstance(value, int):
             return value != 0
         if isinstance(value, str):
-            return value.strip().lower() in ('1', 'true')
+            return parse_string_literal(value).strip().lower() in (
+                '1', 'true'
+            )
         return False
 
     @staticmethod
@@ -863,6 +859,9 @@ class ClickHouseDialect(default.DefaultDialect):
     def _render_flattened_nested_insert(
         self, table, row, include_values_template
     ):
+        # Caller must validate every expanded row has this same key set before
+        # using the first row to render the structured INSERT column list.
+        # Future ClickHouse-specific INSERT modifiers must be forwarded here.
         preparer = self.identifier_preparer
         columns = []
         binds = []

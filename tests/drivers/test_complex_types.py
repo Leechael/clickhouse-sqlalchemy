@@ -1,6 +1,6 @@
 import enum
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from sqlalchemy import Column, MetaData, create_engine, literal, select
 from sqlalchemy.sql import type_api
@@ -325,12 +325,7 @@ class FlattenedNestedInsertExecutionTestCase(TestCase):
         )
 
     def _execute_with_http_cursor_patch(self, cursor_method, rows):
-        captured = []
-
-        def fake_cursor_method(cursor, operation, parameters=None,
-                               context=None):
-            captured.append((operation, parameters))
-            raise self.StopExecution
+        mocked = MagicMock(side_effect=self.StopExecution)
 
         with patch.object(
             ClickHouseDialect_http, '_get_server_version_info',
@@ -339,14 +334,15 @@ class FlattenedNestedInsertExecutionTestCase(TestCase):
             ClickHouseDialect_http, '_get_default_schema_name',
             return_value='default'
         ), patch.object(
-            connector.Cursor, cursor_method, fake_cursor_method
+            connector.Cursor, cursor_method, mocked
         ):
             engine = create_engine('clickhouse://localhost/default')
             with self.assertRaises(self.StopExecution):
                 with engine.connect() as connection:
                     connection.execute(self.table.insert(), rows)
 
-        return captured[0]
+        operation, parameters = mocked.call_args.args[:2]
+        return operation, parameters
 
     def test_flatten_nested_one_level_batch_insert_mapping_execution(self):
         rows = [
