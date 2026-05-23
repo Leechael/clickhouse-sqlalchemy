@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import exc, literal_column
 from sqlalchemy.sql import compiler, elements, COLLECT_CARTESIAN_PRODUCTS, \
     WARN_LINTING, crud
@@ -460,6 +462,11 @@ class ClickHouseSQLCompiler(compiler.SQLCompiler):
         return text
 
     def render_literal_value(self, value, type_):
+        if isinstance(value, uuid.UUID):
+            type_ = types.UUID()
+        elif getattr(type_, '_isnull', False):
+            type_ = type_api._resolve_value_to_type(value)
+
         if isinstance(value, list):
             return (
                 '[' +
@@ -467,6 +474,14 @@ class ClickHouseSQLCompiler(compiler.SQLCompiler):
                         x, type_api._resolve_value_to_type(x)
                     ) for x in value) +
                 ']'
+            )
+        elif isinstance(value, tuple):
+            return (
+                '(' +
+                ', '.join(self.render_literal_value(
+                        x, type_api._resolve_value_to_type(x)
+                    ) for x in value) +
+                ')'
             )
         else:
             return super(ClickHouseSQLCompiler, self).render_literal_value(

@@ -4,7 +4,10 @@ from sqlalchemy.sql.elements import TextClause
 from sqlalchemy.pool import AsyncAdaptedQueuePool
 
 from .connector import AsyncAdapt_asynch_dbapi
-from ..native.base import ClickHouseDialect_native, ClickHouseExecutionContext
+from ..native.base import (
+    ClickHouseDialect_native, ClickHouseExecutionContext,
+    ClickHouseNativeSQLCompiler,
+)
 
 # Export connector version
 VERSION = (0, 0, 1, None)
@@ -15,9 +18,19 @@ class ClickHouseAsynchExecutionContext(ClickHouseExecutionContext):
         return self.create_default_cursor()
 
 
+class ClickHouseAsynchSQLCompiler(ClickHouseNativeSQLCompiler):
+    def visit_bindparam(self, bindparam, **kw):
+        if not self.isinsert and not kw.get('literal_binds'):
+            kw['literal_execute'] = True
+        return super(ClickHouseAsynchSQLCompiler, self).visit_bindparam(
+            bindparam, **kw
+        )
+
+
 class ClickHouseDialect_asynch(ClickHouseDialect_native):
     driver = 'asynch'
     execution_ctx_cls = ClickHouseAsynchExecutionContext
+    statement_compiler = ClickHouseAsynchSQLCompiler
 
     is_async = True
     supports_statement_cache = True
