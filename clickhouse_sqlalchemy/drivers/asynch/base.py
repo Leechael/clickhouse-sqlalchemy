@@ -20,10 +20,21 @@ class ClickHouseAsynchExecutionContext(ClickHouseExecutionContext):
 
 class ClickHouseAsynchSQLCompiler(ClickHouseNativeSQLCompiler):
     def visit_bindparam(self, bindparam, **kw):
-        if not self.isinsert and not kw.get('literal_binds'):
+        if (
+            not self.isinsert
+            and not self._is_textual_insert()
+            and not kw.get('literal_binds')
+        ):
             kw['literal_execute'] = True
         return super(ClickHouseAsynchSQLCompiler, self).visit_bindparam(
             bindparam, **kw
+        )
+
+    def _is_textual_insert(self):
+        statement_text = getattr(self.statement, 'text', None)
+        return (
+            isinstance(statement_text, str)
+            and statement_text.lstrip().upper().startswith('INSERT')
         )
 
 

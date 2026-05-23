@@ -791,7 +791,7 @@ class ClickHouseDialect(default.DefaultDialect):
                 context.execution_options['settings']['flatten_nested']
             )
         except (AttributeError, KeyError, TypeError):
-            return False
+            option_setting = None
         if self._is_false_setting(option_setting):
             return True
         if self._is_true_setting(option_setting):

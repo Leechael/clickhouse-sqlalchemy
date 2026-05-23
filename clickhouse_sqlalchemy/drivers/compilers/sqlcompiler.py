@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import exc, literal_column
 from sqlalchemy.sql import compiler, elements, COLLECT_CARTESIAN_PRODUCTS, \
     WARN_LINTING, crud
-from sqlalchemy.sql import type_api
+from sqlalchemy.sql import sqltypes, type_api
 from sqlalchemy.util import inspect_getfullargspec
 
 import clickhouse_sqlalchemy.sql.functions  # noqa:F401
@@ -462,9 +462,11 @@ class ClickHouseSQLCompiler(compiler.SQLCompiler):
         return text
 
     def render_literal_value(self, value, type_):
+        if value is None:
+            return 'NULL'
         if isinstance(value, uuid.UUID):
             type_ = types.UUID()
-        elif getattr(type_, '_isnull', False):
+        elif isinstance(type_, sqltypes.NullType):
             type_ = type_api._resolve_value_to_type(value)
 
         if isinstance(value, list):

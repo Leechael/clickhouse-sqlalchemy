@@ -53,6 +53,15 @@ class AsynchConnectorParamTestCase(TestCase):
         )
         self.assertEqual(state.parameters, {})
 
+    def test_asynch_compiler_renders_null_literals(self):
+        state = self._postcompile(
+            text('SELECT :value'),
+            {'value': None}
+        )
+
+        self.assertEqual(state.statement, 'SELECT NULL')
+        self.assertEqual(state.parameters, {})
+
     def test_asynch_compiler_renders_nested_container_literals(self):
         state = self._postcompile(
             text('SELECT :empty_array, :empty_tuple, :payload'),
@@ -111,6 +120,17 @@ class AsynchConnectorParamTestCase(TestCase):
         self.assertEqual(
             compiled.string,
             'INSERT INTO events (id) VALUES (%(id)s)'
+        )
+        self.assertEqual(compiled.literal_execute_params, frozenset())
+
+    def test_asynch_compiler_keeps_textual_insert_binds_for_executemany(self):
+        compiled = text(
+            'INSERT INTO events (id, payload) VALUES (:id, :payload)'
+        ).compile(dialect=ClickHouseDialect_asynch())
+
+        self.assertEqual(
+            compiled.string,
+            'INSERT INTO events (id, payload) VALUES (%(id)s, %(payload)s)'
         )
         self.assertEqual(compiled.literal_execute_params, frozenset())
 
