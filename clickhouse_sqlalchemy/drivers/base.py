@@ -1,9 +1,12 @@
 import enum
+import re
+import weakref
+from collections.abc import Mapping
 
 from sqlalchemy import schema, types as sqltypes, util as sa_util, text
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.sql import (
-    compiler, elements
+    compiler, elements, type_api
 )
 from sqlalchemy.util import (
     warn,
@@ -13,11 +16,20 @@ from .compilers.ddlcompiler import ClickHouseDDLCompiler
 from .compilers.sqlcompiler import ClickHouseSQLCompiler
 from .compilers.typecompiler import ClickHouseTypeCompiler
 from .reflection import ClickHouseInspector
-from .util import get_inner_spec, parse_arguments
+from .util import (
+    get_inner_spec, parse_arguments, parse_named_type_argument,
+    parse_string_literal,
+)
 from .. import types
 
 # Column specifications
 colspecs = {}
+
+
+_flatten_nested_set_re = re.compile(
+    r'^\s*SET\s+(.+?)\s*;?\s*$',
+    re.IGNORECASE,
+)
 
 
 # Type converters
@@ -73,6 +85,7 @@ ischema_names = {
     '_lowcardinality': types.LowCardinality,
     '_tuple': types.Tuple,
     '_map': types.Map,
+    '_nested': types.Nested,
     '_aggregatefunction': types.AggregateFunction,
     '_simpleaggregatefunction': types.SimpleAggregateFunction,
 }
@@ -91,6 +104,82 @@ class ClickHouseIdentifierPreparer(compiler.IdentifierPreparer):
 
 
 class ClickHouseExecutionContextBase(default.DefaultExecutionContext):
+    @classmethod
+    def _init_compiled(
+        cls, dialect, connection, dbapi_connection, execution_options,
+        compiled, parameters, invoked_statement, extracted_parameters,
+        cache_hit=default.CacheStats.CACHING_DISABLED,
+        **kwargs,
+    ):
+        cls._validate_nested_insert_parameter_groups(compiled, parameters)
+        if (
+            'param_dict' not in
+            default.DefaultExecutionContext._init_compiled.__code__.co_varnames
+        ):
+            kwargs.pop('param_dict', None)
+        return super(ClickHouseExecutionContextBase, cls)._init_compiled(
+            dialect, connection, dbapi_connection, execution_options,
+            compiled, parameters, invoked_statement, extracted_parameters,
+            cache_hit=cache_hit,
+            **kwargs
+        )
+
+    @staticmethod
+    def _validate_nested_insert_parameter_groups(compiled, parameters):
+        """Reject batch INSERTs where rows omit different Nested columns.
+
+        ClickHouse requires every row in a batch to contain the same set
+        of columns.  When Nested columns are expanded into ``parent.child``
+        keys downstream, a row that omits the whole Nested dict would drop
+        *all* of those keys while another row keeps them.  We catch that
+        mismatch early so the error message mentions the Nested column name
+        rather than the cryptic expanded keys.
+        """
+        try:
+            if not compiled.isinsert or not parameters:
+                return
+
+            insert_stmt = compiled.statement
+            if insert_stmt.select is not None or insert_stmt._values:
+                return
+
+            table = insert_stmt.table
+        except AttributeError:
+            return
+
+        nested_columns = ClickHouseDialect._get_nested_insert_columns(table)
+        if not nested_columns:
+            return
+
+        if len(parameters) <= 1:
+            return
+        if not all(isinstance(row, Mapping) for row in parameters):
+            return
+
+        expected = {
+            column.name
+            for row in parameters
+            for column in nested_columns
+            if column.name in row
+        }
+        if not expected:
+            return
+
+        for index, row in enumerate(parameters, 1):
+            present = {
+                column.name
+                for column in nested_columns
+                if column.name in row
+            }
+            if present != expected:
+                raise ValueError(
+                    "Every row in a batch INSERT must include the same "
+                    "Nested columns. Expected Nested columns %s in row %s, "
+                    "but row has %s. Use empty child arrays for rows with no "
+                    "nested values."
+                    % (sorted(expected), index, sorted(present))
+                )
+
     @sa_util.memoized_property
     def should_autocommit(self):
         return False  # No DML supported, never autocommit
@@ -114,6 +203,7 @@ class ClickHouseDialect(default.DefaultDialect):
 
     supports_comments = True
     inline_comments = True
+    renders_insert_values_template = False
 
     # Dialect related-features
     supports_delete = True
@@ -162,6 +252,8 @@ class ClickHouseDialect(default.DefaultDialect):
         default.DefaultDialect.__init__(self, **kwargs)
         self._json_deserializer = json_deserializer
         self._json_serializer = json_serializer
+        self._flatten_nested_settings = weakref.WeakKeyDictionary()
+        self._warned_flatten_nested_tracking_unavailable = False
 
     def initialize(self, connection):
         super(ClickHouseDialect, self).initialize(connection)
@@ -243,7 +335,7 @@ class ClickHouseDialect(default.DefaultDialect):
 
     def _get_column_type(self, name, spec):
         if spec.startswith('Array'):
-            inner = spec[6:-1]
+            inner = get_inner_spec(spec)
             coltype = self.ischema_names['_array']
             return coltype(self._get_column_type(name, inner))
 
@@ -252,17 +344,17 @@ class ClickHouseDialect(default.DefaultDialect):
             return self.ischema_names['FixedString'](length)
 
         elif spec.startswith('Nullable'):
-            inner = spec[9:-1]
+            inner = get_inner_spec(spec)
             coltype = self.ischema_names['_nullable']
             return coltype(self._get_column_type(name, inner))
 
         elif spec.startswith('LowCardinality'):
-            inner = spec[15:-1]
+            inner = get_inner_spec(spec)
             coltype = self.ischema_names['_lowcardinality']
             return coltype(self._get_column_type(name, inner))
 
         elif spec.startswith('AggregateFunction'):
-            params = spec[18:-1]
+            params = get_inner_spec(spec)
 
             arguments = parse_arguments(params)
             agg_func, inner = arguments[0], arguments[1:]
@@ -275,7 +367,7 @@ class ClickHouseDialect(default.DefaultDialect):
             return coltype(agg_func, *inner_types)
 
         elif spec.startswith('SimpleAggregateFunction'):
-            params = spec[24:-1]
+            params = get_inner_spec(spec)
 
             arguments = parse_arguments(params)
             agg_func, inner = arguments[0], arguments[1:]
@@ -288,22 +380,47 @@ class ClickHouseDialect(default.DefaultDialect):
             return coltype(agg_func, *inner_types)
 
         elif spec.startswith('Tuple'):
-            inner = spec[6:-1]
+            inner = get_inner_spec(spec)
             coltype = self.ischema_names['_tuple']
-            inner_types = [
-                self._get_column_type(name, t.strip())
-                for t in inner.split(',')
-            ]
+            inner_types = []
+            for arg in parse_arguments(inner):
+                arg_name, type_spec = parse_named_type_argument(arg)
+                col_type = self._get_column_type(name, type_spec)
+                if arg_name:
+                    inner_types.append((arg_name, col_type))
+                else:
+                    inner_types.append(col_type)
             return coltype(*inner_types)
 
         elif spec.startswith('Map'):
-            inner = spec[4:-1]
+            inner = get_inner_spec(spec)
             coltype = self.ischema_names['_map']
             inner_types = [
-                self._get_column_type(name, t.strip())
-                for t in inner.split(',', 1)
+                self._get_column_type(name, t)
+                for t in parse_arguments(inner)
             ]
             return coltype(*inner_types)
+
+        elif spec.startswith('Nested'):
+            inner = get_inner_spec(spec)
+            columns = []
+            for arg in parse_arguments(inner):
+                arg_name, type_spec = parse_named_type_argument(arg)
+                if not arg_name:
+                    warn("Did not recognize nested column '%s' of column '%s'"
+                         % (arg, name))
+                    return sqltypes.NullType
+                columns.append(
+                    schema.Column(
+                        arg_name,
+                        type_api.to_instance(
+                            self._get_column_type(arg_name, type_spec)
+                        )
+                    )
+                )
+
+            coltype = self.ischema_names['_nested']
+            return coltype(*columns)
 
         elif spec.startswith('Enum'):
             pos = spec.find('(')
@@ -374,10 +491,10 @@ class ClickHouseDialect(default.DefaultDialect):
         inner_spec = get_inner_spec(spec)
         if not inner_spec:
             return []
-        params = inner_spec.split(',', 1)
+        params = list(parse_arguments(inner_spec))
         params[0] = int(params[0])
         if len(params) > 1:
-            params[1] = params[1].strip()
+            params[1] = parse_string_literal(params[1])
         return params
 
     @staticmethod
@@ -385,48 +502,18 @@ class ClickHouseDialect(default.DefaultDialect):
         inner_spec = get_inner_spec(spec)
         if not inner_spec:
             return []
-        return [inner_spec]
+        return [parse_string_literal(inner_spec)]
 
     @staticmethod
     def _parse_options(option_string):
         options = dict()
-        after_name = False
-        escaped = False
-        quote_character = None
-        name = ''
-        value = ''
+        for option in parse_arguments(option_string):
+            if not option:
+                continue
 
-        for ch in option_string:
-            if escaped:
-                name += ch
-                escaped = False  # Accepting escaped character
-
-            elif after_name:
-                if ch in (' ', '='):
-                    pass
-                elif ch == ',':
-                    options[name] = int(value)
-                    after_name = False
-                    name = ''
-                    value = ''  # Reset before collecting new option
-                else:
-                    value += ch
-
-            elif quote_character:
-                if ch == '\\':
-                    escaped = True
-                elif ch == quote_character:
-                    quote_character = None
-                    after_name = True  # Start collecting option value
-                else:
-                    name += ch
-
-            else:
-                if ch == "'":
-                    quote_character = ch
-
-        if after_name:
-            options.setdefault(name, int(value))  # Word after last comma
+            name, value = option.split('=', 1)
+            name = parse_string_literal(name)
+            options[name] = int(value.strip())
 
         return options
 
@@ -568,10 +655,377 @@ class ClickHouseDialect(default.DefaultDialect):
         ):
             parameters = None
 
+        statement, parameters = self._prepare_flattened_nested_insert(
+            statement, parameters, context, cursor
+        )
         cursor.executemany(statement, parameters, context=context)
 
     def do_execute(self, cursor, statement, parameters, context=None):
+        self._remember_flatten_nested_setting(statement, cursor)
+        statement, parameters = self._prepare_flattened_nested_insert(
+            statement, parameters, context, cursor
+        )
         cursor.execute(statement, parameters, context=context)
+
+    def _prepare_flattened_nested_insert(
+        self, statement, parameters, context=None, cursor=None
+    ):
+        """Expand dict-style Nested payloads before the driver sees them.
+
+        ClickHouse with ``flatten_nested=1`` stores each Nested child as a
+        separate ``Array`` column named ``parent.child``.  SQLAlchemy's
+        compiler does not know about this flattening, so a parameter dict
+        such as ``{'nested': {'a': [1], 'b': [2]}}`` must be turned into
+        ``{'nested.a': [1], 'nested.b': [2]}`` and the INSERT statement
+        rewritten to reference those dotted columns.
+
+        If ``flatten_nested=0`` is active, we refuse Nested payloads with a
+        clear error because the unflattened array-of-structs shape is not yet
+        supported.
+        """
+        try:
+            if not context.isinsert or not parameters:
+                return statement, parameters
+
+            insert_stmt = context.compiled.statement
+            if insert_stmt.select is not None or insert_stmt._values:
+                return statement, parameters
+
+            table = insert_stmt.table
+        except AttributeError:
+            return statement, parameters
+
+        nested_columns = self._get_nested_insert_columns(table)
+        if not nested_columns:
+            return statement, parameters
+
+        is_many = isinstance(parameters, (list, tuple))
+        rows = parameters if is_many else [parameters]
+        if not all(isinstance(row, Mapping) for row in rows):
+            return statement, parameters
+
+        if self._flatten_nested_disabled(context, cursor):
+            if any(
+                column.name in row
+                for row in rows
+                for column in nested_columns
+            ):
+                raise NotImplementedError(
+                    "flatten_nested=0 insert support is not implemented. "
+                    "Use flatten_nested=1 with {'nested': {'child': [...]}} "
+                    "or issue raw ClickHouse SQL for unflattened Nested "
+                    "payloads."
+                )
+            return statement, parameters
+
+        expanded = []
+        changed = False
+        for row in rows:
+            expanded_row, row_changed = self._expand_nested_insert_row(
+                row, nested_columns
+            )
+            changed = changed or row_changed
+            expanded.append(expanded_row)
+
+        if not changed:
+            return statement, parameters
+
+        self._validate_expanded_nested_rows(expanded)
+        statement = self._render_flattened_nested_insert(
+            table, expanded[0], insert_stmt,
+            include_values_template=self.renders_insert_values_template
+        )
+        parameters = expanded if is_many else expanded[0]
+
+        try:
+            context.parameters = parameters
+        except AttributeError:
+            pass
+        try:
+            context.compiled_parameters = expanded
+        except AttributeError:
+            pass
+
+        return statement, parameters
+
+    @staticmethod
+    def _get_nested_insert_columns(table):
+        """Return all ``Nested`` columns on *table* (cached on the table)."""
+        cache_key = '_clickhouse_sqlalchemy_nested_insert_columns'
+        try:
+            return getattr(table, cache_key)
+        except AttributeError:
+            nested_columns = tuple(
+                c for c in table.columns if isinstance(c.type, types.Nested)
+            )
+            setattr(table, cache_key, nested_columns)
+            return nested_columns
+
+    @staticmethod
+    def _validate_expanded_nested_rows(rows):
+        """Ensure every expanded row has the exact same keys."""
+        expected = set(rows[0])
+        for index, row in enumerate(rows[1:], 2):
+            current = set(row)
+            if current != expected:
+                raise ValueError(
+                    "Batch INSERT rows must use the same columns after "
+                    "Nested expansion. Row 1 has columns %s, but row %s "
+                    "has columns %s."
+                    % (
+                        sorted(expected),
+                        index,
+                        sorted(current),
+                    )
+                )
+
+    def _flatten_nested_disabled(self, context, cursor=None):
+        """Return ``True`` if the connection uses ``flatten_nested=0``.
+
+        Checked in priority order:
+        1. ``execution_options['settings']['flatten_nested']``
+        2. The underlying transport's stored settings (HTTP driver)
+        3. The most recent ``SET flatten_nested = X`` on this connection
+        """
+        try:
+            option_setting = (
+                context.execution_options['settings']['flatten_nested']
+            )
+        except (AttributeError, KeyError, TypeError):
+            option_setting = None
+        if self._is_false_setting(option_setting):
+            return True
+        if self._is_true_setting(option_setting):
+            return False
+
+        try:
+            transport_setting = (
+                cursor._connection.transport.ch_settings['flatten_nested']
+            )
+        except (AttributeError, KeyError, TypeError):
+            transport_setting = None
+        if self._is_false_setting(transport_setting):
+            return True
+        if self._is_true_setting(transport_setting):
+            return False
+
+        return self._is_false_setting(
+            self._get_remembered_flatten_nested_setting(cursor)
+        )
+
+    def _remember_flatten_nested_setting(self, statement, cursor):
+        """Cache the value of a ``SET flatten_nested = X`` statement.
+
+        Native and asynch cursors do not expose the current session settings,
+        so we intercept the SET statement itself and stash the value on the
+        dialect instance keyed by the underlying DBAPI connection.
+        """
+        if not isinstance(statement, str):
+            return
+
+        match = _flatten_nested_set_re.match(statement)
+        if match is None:
+            return
+
+        try:
+            connection = cursor._connection
+        except AttributeError:
+            return
+
+        setting = self._find_flatten_nested_set_value(match.group(1))
+        if setting is None:
+            return
+
+        self._remember_connection_flatten_nested(connection, setting)
+
+    @staticmethod
+    def _find_flatten_nested_set_value(settings):
+        # This splitter is only used to locate a scalar flatten_nested
+        # assignment in a SET list. It is not a full ClickHouse SET parser.
+        for item in parse_arguments(settings):
+            if '=' not in item:
+                continue
+
+            key, value = item.split('=', 1)
+            key = key.strip().strip('`"').lower()
+            if key == 'flatten_nested':
+                return parse_string_literal(value)
+        return None
+
+    def _remember_connection_flatten_nested(self, connection, setting):
+        try:
+            self._flatten_nested_settings[connection] = setting
+        except TypeError:
+            if not self._warned_flatten_nested_tracking_unavailable:
+                warn(
+                    "flatten_nested SET tracking is unavailable for this "
+                    "driver connection because it cannot be weak-referenced"
+                )
+                self._warned_flatten_nested_tracking_unavailable = True
+
+    def _get_remembered_flatten_nested_setting(self, cursor):
+        """Retrieve the cached ``flatten_nested`` value for this connection."""
+        try:
+            connection = cursor._connection
+        except AttributeError:
+            return None
+
+        try:
+            return self._flatten_nested_settings[connection]
+        except (KeyError, TypeError):
+            return None
+
+    @staticmethod
+    def _is_false_setting(value):
+        # Accept scalar settings with or without SQL string-literal quotes.
+        if value is None:
+            return False
+        if isinstance(value, bool):
+            return not value
+        if isinstance(value, int):
+            return value == 0
+        if isinstance(value, str):
+            return parse_string_literal(value).strip().lower() in (
+                '0', 'false'
+            )
+        return False
+
+    @staticmethod
+    def _is_true_setting(value):
+        # Accept scalar settings with or without SQL string-literal quotes.
+        if value is None:
+            return False
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            return value != 0
+        if isinstance(value, str):
+            return parse_string_literal(value).strip().lower() in (
+                '1', 'true'
+            )
+        return False
+
+    @staticmethod
+    def _expand_nested_insert_row(row, nested_columns):
+        """Expand a Nested mapping to dotted keys for flatten_nested=1.
+
+        Turns ``{'nested': {'child': [...]}}`` into
+        ``{'nested.child': [...]}``.
+
+        Validates that every required child column is present and rejects
+        row-oriented array payloads (unsupported).
+        """
+        expanded = dict(row)
+        changed = False
+
+        for column in nested_columns:
+            if column.name not in expanded:
+                continue
+
+            nested_value = expanded[column.name]
+            if isinstance(nested_value, (list, tuple)):
+                raise NotImplementedError(
+                    "Row-oriented Nested payloads are not supported. For "
+                    "flatten_nested=1, use {'%s': {'child': [...]}} "
+                    "instead. flatten_nested=0 insert support is not "
+                    "implemented."
+                    % column.name
+                )
+            if not isinstance(nested_value, Mapping):
+                raise TypeError(
+                    "Nested column '%s' expects a mapping of child names to "
+                    "arrays for flatten_nested=1" % column.name
+                )
+
+            changed = True
+            expanded.pop(column.name)
+            child_names = {child.name for child in column.type.columns}
+            provided_names = set(nested_value)
+            extra_names = provided_names - child_names
+            if extra_names:
+                raise ValueError(
+                    "Nested column '%s' got unknown child keys %s. "
+                    "Expected child keys are %s."
+                    % (
+                        column.name,
+                        sorted(extra_names),
+                        sorted(child_names),
+                    )
+                )
+            missing_names = child_names - provided_names
+            if missing_names:
+                raise ValueError(
+                    "Nested column '%s' is missing child keys %s. "
+                    "Provided child keys are %s."
+                    % (
+                        column.name,
+                        sorted(missing_names),
+                        sorted(provided_names),
+                    )
+                )
+            for child in column.type.columns:
+                expanded['%s.%s' % (column.name, child.name)] = (
+                    nested_value[child.name]
+                )
+
+        return expanded, changed
+
+    def _render_flattened_nested_insert(
+        self, table, row, insert_stmt, include_values_template
+    ):
+        """Build the INSERT text with dotted Nested column names.
+
+        Caller must validate every expanded row has this same key set before
+        using the first row to render the structured INSERT column list.
+        Future ClickHouse-specific INSERT modifiers must be forwarded here.
+        """
+        preparer = self.identifier_preparer
+        columns = []
+        binds = []
+
+        for column in table.columns:
+            if isinstance(column.type, types.Nested):
+                child_keys = [
+                    '%s.%s' % (column.name, child.name)
+                    for child in column.type.columns
+                ]
+                if not all(key in row for key in child_keys):
+                    continue
+
+                for child in column.type.columns:
+                    bind_name = '%s.%s' % (column.name, child.name)
+                    columns.append(
+                        '%s.%s' % (
+                            preparer.quote(column.name),
+                            preparer.quote(child.name)
+                        )
+                    )
+                    binds.append('%%(%s)s' % bind_name)
+                continue
+
+            if column.name in row:
+                columns.append(preparer.format_column(column))
+                binds.append('%%(%s)s' % column.name)
+
+        prefixes = self._render_insert_prefixes(insert_stmt)
+        text = 'INSERT%s INTO %s (%s) VALUES' % (
+            prefixes,
+            preparer.format_table(table), ', '.join(columns)
+        )
+        if include_values_template:
+            text += ' (%s)' % ', '.join(binds)
+        return text
+
+    def _render_insert_prefixes(self, insert_stmt):
+        prefixes = []
+        compiler = self.statement_compiler(self, insert_stmt)
+        for clause, dialect_name in insert_stmt._prefixes:
+            if dialect_name in ('*', self.name):
+                prefixes.append(compiler.process(clause))
+
+        if prefixes:
+            return ' ' + ' '.join(prefixes)
+        return ''
 
     def _check_unicode_returns(self, connection, additional_tests=None):
         return True

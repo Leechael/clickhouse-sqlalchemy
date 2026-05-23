@@ -1,6 +1,9 @@
 from unittest import TestCase
 
-from clickhouse_sqlalchemy.drivers.util import get_inner_spec, parse_arguments
+from clickhouse_sqlalchemy.drivers.util import (
+    get_inner_spec, parse_arguments, parse_named_type_argument,
+    parse_string_literal
+)
 
 
 class GetInnerSpecTestCase(TestCase):
@@ -48,3 +51,56 @@ class ParseArgumentsTestCase(TestCase):
             parse_arguments("sumIf(total, status = 'accepted'), Float32"),
             ("sumIf(total, status = 'accepted')", "Float32")
         )
+        self.assertEqual(
+            parse_arguments(
+                "Enum8('hello, world' = 1, 'plain' = 2), String"
+            ),
+            ("Enum8('hello, world' = 1, 'plain' = 2)", "String")
+        )
+        self.assertEqual(
+            parse_arguments(
+                "Enum8('O''Brien, Jr.' = 1, 'plain' = 2), String"
+            ),
+            ("Enum8('O''Brien, Jr.' = 1, 'plain' = 2)", "String")
+        )
+        self.assertEqual(
+            parse_arguments(
+                "DateTime64(3, 'America/New_York'), Nullable(String)"
+            ),
+            ("DateTime64(3, 'America/New_York')", "Nullable(String)")
+        )
+        self.assertEqual(
+            parse_arguments("Tuple(`full name` String, value Float32)"),
+            ("Tuple(`full name` String, value Float32)",)
+        )
+
+
+class ParseNamedTypeArgumentTestCase(TestCase):
+    def test_parse_named_type_argument(self):
+        self.assertEqual(
+            parse_named_type_argument('name String'),
+            ('name', 'String')
+        )
+        self.assertEqual(
+            parse_named_type_argument('value Map(String, Nullable(String))'),
+            ('value', 'Map(String, Nullable(String))')
+        )
+        self.assertEqual(
+            parse_named_type_argument('Tuple(String, UInt32)'),
+            (None, 'Tuple(String, UInt32)')
+        )
+        self.assertEqual(
+            parse_named_type_argument('`full name` String'),
+            ('full name', 'String')
+        )
+
+
+class ParseStringLiteralTestCase(TestCase):
+    def test_parse_string_literal(self):
+        self.assertEqual(parse_string_literal('0'), '0')
+        self.assertEqual(parse_string_literal("'0'"), '0')
+        self.assertEqual(parse_string_literal('"0"'), '0')
+        self.assertEqual(parse_string_literal(r"'O\\'Brien'"), r"O\'Brien")
+        self.assertEqual(parse_string_literal("'O''Brien'"), "O'Brien")
+        self.assertEqual(parse_string_literal('"a ""quoted"" value"'),
+                         'a "quoted" value')

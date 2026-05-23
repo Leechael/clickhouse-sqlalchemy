@@ -7,6 +7,10 @@ from . import connector
 from ..base import (
     ClickHouseDialect, ClickHouseExecutionContextBase, ClickHouseSQLCompiler,
 )
+from ..util import (
+    get_pyformat_insert_values_template,
+    strip_pyformat_insert_values_template,
+)
 from sqlalchemy.engine.interfaces import ExecuteStyle
 from sqlalchemy import __version__ as sqlalchemy_version
 
@@ -32,17 +36,17 @@ class ClickHouseNativeSQLCompiler(ClickHouseSQLCompiler):
         rv = super(ClickHouseNativeSQLCompiler, self).visit_insert(
             insert_stmt, asfrom=asfrom, **kw)
 
+        values_template = get_pyformat_insert_values_template(rv)
+        self._clickhouse_insert_values_template = values_template
+
         if kw.get('literal_binds') or insert_stmt._values:
             return rv
 
-        pos = rv.lower().rfind('values (')
-        # Remove (%s)-templates from VALUES clause if exists.
+        # Remove pyformat templates from VALUES clause if exists.
         # ClickHouse server since version 19.3.3 parse query after VALUES and
         # allows inplace parameters.
         # Example: INSERT INTO test (x) VALUES (1), (2).
-        if pos != -1:
-            rv = rv[:pos + 6]
-        return rv
+        return strip_pyformat_insert_values_template(rv, values_template)
 
 
 class ClickHouseDialect_native(ClickHouseDialect):
