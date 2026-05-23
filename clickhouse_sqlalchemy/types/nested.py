@@ -17,6 +17,7 @@ class Nested(types.TypeEngine):
         super(Nested, self).__init__()
 
     def adapt(self, cls, **kw):
+        """Produce a new Nested type of class *cls* with the same children."""
         if not issubclass(cls, Nested):
             raise NotImplementedError(
                 "Nested type adaptation to %s is not supported" %
@@ -35,6 +36,7 @@ class Nested(types.TypeEngine):
             return typ
 
     def copy(self, **kw):
+        """Return an independent copy of this Nested type."""
         return self.adapt(self.__class__)
 
     class Comparator(UserDefinedType.Comparator):
@@ -53,8 +55,11 @@ class Nested(types.TypeEngine):
 
 
 class NestedColumn(ColumnClause):
-    # NestedColumn depends on the parent expression plus a synthetic Array
-    # child type, so it opts out of SQLAlchemy's generic cache inheritance.
+    """A dotted reference such as ``table.nested.child``.
+
+    NestedColumn depends on the parent expression plus a synthetic Array
+    child type, so it opts out of SQLAlchemy's generic cache inheritance.
+    """
     inherit_cache = False
 
     def __init__(self, parent, sub_column):

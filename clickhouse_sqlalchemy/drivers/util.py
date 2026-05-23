@@ -1,5 +1,12 @@
 
 def _scan_type_expression(value):
+    """Yield every character of *value* with its bracket depth and quote state.
+
+    Tracks how deeply nested we are inside ``(...)`` pairs and whether
+    we are inside a quoted string literal, so callers can safely split
+    on commas or match closing parentheses without getting confused by
+    nested type definitions or string contents.
+    """
     brackets = 0
     quote = None
     escaped = False
@@ -69,6 +76,12 @@ def parse_arguments(param_string):
 
 
 def parse_named_type_argument(argument):
+    """Split a ClickHouse named argument such as ```name` String``.
+
+    Returns ``(name, type_spec)`` when the argument contains an
+    unquoted space separating the identifier from the type;
+    otherwise returns ``(None, argument)`` for unnamed arguments.
+    """
     argument = argument.strip()
 
     for i, ch, bracket_level, quote in _scan_type_expression(argument):
@@ -83,6 +96,10 @@ def parse_named_type_argument(argument):
 
 
 def parse_string_literal(value):
+    """Remove surrounding quotes from a SQL string literal and unescape it.
+
+    If *value* is not quoted, returns it unchanged.
+    """
     value = value.strip()
     if len(value) < 2 or value[0] != value[-1] or value[0] not in "'\"":
         return value

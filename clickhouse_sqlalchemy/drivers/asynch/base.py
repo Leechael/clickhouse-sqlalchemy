@@ -40,6 +40,8 @@ class ClickHouseDialect_asynch(ClickHouseDialect_native):
         return f(sql, kwargs)
 
     def do_execute(self, cursor, statement, parameters, context=None):
+        # Intercept SET flatten_nested and expand dict-style Nested
+        # payloads before the asynch driver sees them.
         self._remember_flatten_nested_setting(statement, cursor)
         statement, parameters = self._prepare_flattened_nested_insert(
             statement, parameters, context, cursor
@@ -47,6 +49,9 @@ class ClickHouseDialect_asynch(ClickHouseDialect_native):
         cursor.execute(statement, parameters, context)
 
     def do_executemany(self, cursor, statement, parameters, context=None):
+        # Expand dict-style Nested payloads before the asynch driver sees
+        # them.  The VALUES template is stripped separately in the cursor
+        # wrapper because asynch builds value rows itself.
         statement, parameters = self._prepare_flattened_nested_insert(
             statement, parameters, context, cursor
         )

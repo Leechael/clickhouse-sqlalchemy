@@ -119,6 +119,15 @@ class ClickHouseExecutionContextBase(default.DefaultExecutionContext):
 
     @staticmethod
     def _validate_nested_insert_parameter_groups(compiled, parameters):
+        """Reject batch INSERTs where rows omit different Nested columns.
+
+        ClickHouse requires every row in a batch to contain the same set
+        of columns.  When Nested columns are expanded into ``parent.child``
+        keys downstream, a row that omits the whole Nested dict would drop
+        *all* of those keys while another row keeps them.  We catch that
+        mismatch early so the error message mentions the Nested column name
+        rather than the cryptic expanded keys.
+        """
         if not (getattr(compiled, 'isinsert', False) and parameters):
             return
 
@@ -659,6 +668,19 @@ class ClickHouseDialect(default.DefaultDialect):
     def _prepare_flattened_nested_insert(
         self, statement, parameters, context=None, cursor=None
     ):
+        """Expand dict-style Nested payloads before the driver sees them.
+
+        ClickHouse with ``flatten_nested=1`` stores each Nested child as a
+        separate ``Array`` column named ``parent.child``.  SQLAlchemy's
+        compiler does not know about this flattening, so a parameter dict
+        such as ``{'nested': {'a': [1], 'b': [2]}}`` must be turned into
+        ``{'nested.a': [1], 'nested.b': [2]}`` and the INSERT statement
+        rewritten to reference those dotted columns.
+
+        If ``flatten_nested=0`` is active, we refuse Nested payloads with a
+        clear error because the unflattened array-of-structs shape is not yet
+        supported.
+        """
         if not (context and context.isinsert and parameters):
             return statement, parameters
 
@@ -728,6 +750,7 @@ class ClickHouseDialect(default.DefaultDialect):
 
     @staticmethod
     def _get_nested_insert_columns(table):
+        """Return all ``Nested`` columns on *table* (cached on the table)."""
         cache_key = '_clickhouse_sqlalchemy_nested_insert_columns'
         nested_columns = getattr(table, cache_key, None)
         if nested_columns is None:
@@ -739,6 +762,7 @@ class ClickHouseDialect(default.DefaultDialect):
 
     @staticmethod
     def _validate_expanded_nested_rows(rows):
+        """Ensure every expanded row has the exact same keys."""
         expected = set(rows[0])
         for index, row in enumerate(rows[1:], 2):
             current = set(row)
@@ -755,6 +779,13 @@ class ClickHouseDialect(default.DefaultDialect):
                 )
 
     def _flatten_nested_disabled(self, context, cursor=None):
+        """Return ``True`` if the connection uses ``flatten_nested=0``.
+
+        Checked in priority order:
+        1. ``execution_options['settings']['flatten_nested']``
+        2. The underlying transport's stored settings (HTTP driver)
+        3. The most recent ``SET flatten_nested = X`` on this connection
+        """
         execution_options = getattr(context, 'execution_options', {}) or {}
         settings = execution_options.get('settings') or {}
         option_setting = settings.get('flatten_nested')
@@ -775,6 +806,12 @@ class ClickHouseDialect(default.DefaultDialect):
         )
 
     def _remember_flatten_nested_setting(self, statement, cursor):
+        """Cache the value of a ``SET flatten_nested = X`` statement.
+
+        Native and asynch cursors do not expose the current session settings,
+        so we intercept the SET statement itself and stash the value on the
+        dialect instance keyed by the underlying DBAPI connection.
+        """
         if not isinstance(statement, str):
             return
 
@@ -819,13 +856,17 @@ class ClickHouseDialect(default.DefaultDialect):
 
     @staticmethod
     def _get_cursor_ch_settings(cursor):
-        # HTTP transport stores query settings here. Native/asynch do not;
-        # their explicit SET flatten_nested guard is tracked separately.
+        """Return transport-level settings from the HTTP driver, if any.
+
+        HTTP transport stores query settings here. Native/asynch do not;
+        their explicit SET flatten_nested guard is tracked separately.
+        """
         connection = ClickHouseDialect._get_cursor_connection(cursor)
         transport = getattr(connection, 'transport', None)
         return getattr(transport, 'ch_settings', {}) or {}
 
     def _get_remembered_flatten_nested_setting(self, cursor):
+        """Retrieve the cached ``flatten_nested`` value for this connection."""
         connection = ClickHouseDialect._get_cursor_connection(cursor)
         if connection is None:
             return None
@@ -873,6 +914,14 @@ class ClickHouseDialect(default.DefaultDialect):
 
     @staticmethod
     def _expand_nested_insert_row(row, nested_columns):
+        """Expand a Nested mapping to dotted keys for flatten_nested=1.
+
+        Turns ``{'nested': {'child': [...]}}`` into
+        ``{'nested.child': [...]}``.
+
+        Validates that every required child column is present and rejects
+        row-oriented array payloads (unsupported).
+        """
         expanded = dict(row)
         changed = False
 
@@ -931,9 +980,12 @@ class ClickHouseDialect(default.DefaultDialect):
     def _render_flattened_nested_insert(
         self, table, row, insert_stmt, include_values_template
     ):
-        # Caller must validate every expanded row has this same key set before
-        # using the first row to render the structured INSERT column list.
-        # Future ClickHouse-specific INSERT modifiers must be forwarded here.
+        """Build the INSERT text with dotted Nested column names.
+
+        Caller must validate every expanded row has this same key set before
+        using the first row to render the structured INSERT column list.
+        Future ClickHouse-specific INSERT modifiers must be forwarded here.
+        """
         preparer = self.identifier_preparer
         columns = []
         binds = []

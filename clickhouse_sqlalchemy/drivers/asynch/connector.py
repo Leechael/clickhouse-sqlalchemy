@@ -14,6 +14,17 @@ _pyformat_re = re.compile(r'%\(([^)]+)\)s')
 
 
 def _escape_param(item):
+    """Serialize a Python value into a ClickHouse SQL literal string.
+
+    The asynch driver advertises ``paramstyle='pyformat'``, but its
+    native parameter binder does not handle complex types (Nested arrays,
+    tuples, UUIDs, Enums) correctly.  Before we hand the statement to
+    asynch we inline the bound parameters as CH literals so the server
+    sees fully materialised values.
+
+    This is intentionally the inverse of a normal parameter-escaping
+    layer: it produces SQL text, not a bound value.
+    """
     if item is None:
         return "NULL"
     elif isinstance(item, datetime):
@@ -37,6 +48,13 @@ def _escape_param(item):
 
 
 def _substitute_pyformat_params(operation, params):
+    """Inline dict-style pyformat parameters as CH literals for ``execute()``.
+
+    Replaces ``%(name)s`` placeholders in *operation* with the
+    corresponding ClickHouse-literal produced by `_escape_param`.
+    Returns the modified SQL and ``None`` for *params* so the asynch
+    driver does not attempt its own (broken) binding.
+    """
     if not isinstance(params, dict) or not _pyformat_re.search(operation):
         return operation, params
 
@@ -50,6 +68,15 @@ def _substitute_pyformat_params(operation, params):
 
 
 def _strip_pyformat_values_template(operation, params):
+    """Truncate the VALUES clause template before ``executemany()``.
+
+    The asynch driver builds value tuples internally when given a list
+    of parameter dicts.  If we leave the ``VALUES (%(col)s)`` template
+    in the statement, asynch tries to bind the list as a single
+    parameter and fails.  Stripping everything after ``VALUES`` lets
+    asynch generate the value rows itself while still receiving the
+    column list from the preceding ``INSERT INTO ... (cols)`` part.
+    """
     if not isinstance(params, (list, tuple)) or not _pyformat_re.search(
         operation
     ):
