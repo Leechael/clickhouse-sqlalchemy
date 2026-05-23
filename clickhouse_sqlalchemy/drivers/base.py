@@ -786,16 +786,23 @@ class ClickHouseDialect(default.DefaultDialect):
         2. The underlying transport's stored settings (HTTP driver)
         3. The most recent ``SET flatten_nested = X`` on this connection
         """
-        execution_options = getattr(context, 'execution_options', {}) or {}
-        settings = execution_options.get('settings') or {}
-        option_setting = settings.get('flatten_nested')
+        try:
+            option_setting = (
+                context.execution_options['settings']['flatten_nested']
+            )
+        except (AttributeError, KeyError, TypeError):
+            return False
         if self._is_false_setting(option_setting):
             return True
         if self._is_true_setting(option_setting):
             return False
 
-        transport_settings = self._get_cursor_ch_settings(cursor)
-        transport_setting = transport_settings.get('flatten_nested')
+        try:
+            transport_setting = (
+                cursor._connection.transport.ch_settings['flatten_nested']
+            )
+        except (AttributeError, KeyError, TypeError):
+            transport_setting = None
         if self._is_false_setting(transport_setting):
             return True
         if self._is_true_setting(transport_setting):
@@ -819,8 +826,9 @@ class ClickHouseDialect(default.DefaultDialect):
         if match is None:
             return
 
-        connection = self._get_cursor_connection(cursor)
-        if connection is None:
+        try:
+            connection = cursor._connection
+        except AttributeError:
             return
 
         setting = self._find_flatten_nested_set_value(match.group(1))
@@ -854,33 +862,17 @@ class ClickHouseDialect(default.DefaultDialect):
                 )
                 self._warned_flatten_nested_tracking_unavailable = True
 
-    @staticmethod
-    def _get_cursor_ch_settings(cursor):
-        """Return transport-level settings from the HTTP driver, if any.
-
-        HTTP transport stores query settings here. Native/asynch do not;
-        their explicit SET flatten_nested guard is tracked separately.
-        """
-        connection = ClickHouseDialect._get_cursor_connection(cursor)
-        transport = getattr(connection, 'transport', None)
-        return getattr(transport, 'ch_settings', {}) or {}
-
     def _get_remembered_flatten_nested_setting(self, cursor):
         """Retrieve the cached ``flatten_nested`` value for this connection."""
-        connection = ClickHouseDialect._get_cursor_connection(cursor)
-        if connection is None:
+        try:
+            connection = cursor._connection
+        except AttributeError:
             return None
 
         try:
-            setting = self._flatten_nested_settings[connection]
+            return self._flatten_nested_settings[connection]
         except (KeyError, TypeError):
             return None
-        else:
-            return setting
-
-    @staticmethod
-    def _get_cursor_connection(cursor):
-        return getattr(cursor, '_connection', None)
 
     @staticmethod
     def _is_false_setting(value):
