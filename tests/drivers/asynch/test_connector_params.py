@@ -3,6 +3,7 @@ from unittest import TestCase
 from uuid import UUID
 
 from sqlalchemy import Column, MetaData, bindparam, exc, text
+from sqlalchemy.sql.elements import quoted_name
 from sqlalchemy.types import TypeDecorator
 
 from clickhouse_sqlalchemy import Table, engines, types as ch_types
@@ -60,6 +61,15 @@ class AsynchConnectorParamTestCase(TestCase):
         )
 
         self.assertEqual(state.statement, 'SELECT NULL')
+        self.assertEqual(state.parameters, {})
+
+    def test_asynch_compiler_renders_string_subclass_literals(self):
+        state = self._postcompile(
+            text('SELECT :database'),
+            {'database': quoted_name('system', quote=True)}
+        )
+
+        self.assertEqual(state.statement, "SELECT 'system'")
         self.assertEqual(state.parameters, {})
 
     def test_asynch_compiler_renders_nested_container_literals(self):

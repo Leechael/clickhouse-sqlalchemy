@@ -471,7 +471,10 @@ class ClickHouseSQLCompiler(compiler.SQLCompiler):
             or type_.__class__.__name__ == 'NullType'
             or str(type_).upper() == 'NULL'
         ):
-            type_ = type_api._resolve_value_to_type(value)
+            if isinstance(value, str):
+                type_ = sqltypes.String()
+            else:
+                type_ = type_api._resolve_value_to_type(value)
 
         if isinstance(value, list):
             return (
