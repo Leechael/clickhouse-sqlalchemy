@@ -1,3 +1,122 @@
+import re
+
+
+_pyformat_insert_values_re = re.compile(
+    r"""
+    \A\s*INSERT\b.*\bVALUES\s*
+    (?P<template>
+        \(
+            \s*%\([^)]+\)s
+            (?:\s*,\s*%\([^)]+\)s)*
+            \s*
+        \)
+    )
+    \s*\Z
+    """,
+    re.IGNORECASE | re.VERBOSE | re.DOTALL,
+)
+_values_suffix_re = re.compile(r'\bVALUES\s*\Z', re.IGNORECASE)
+
+
+def _mask_sql_literals_and_comments(statement):
+    chars = list(statement)
+    i = 0
+    quote = None
+    line_comment = False
+    block_comment = False
+
+    while i < len(chars):
+        ch = chars[i]
+        next_ch = chars[i + 1] if i + 1 < len(chars) else ''
+
+        if line_comment:
+            if ch == '\n':
+                line_comment = False
+            else:
+                chars[i] = ' '
+            i += 1
+            continue
+
+        if block_comment:
+            chars[i] = ' '
+            if ch == '*' and next_ch == '/':
+                chars[i + 1] = ' '
+                block_comment = False
+                i += 2
+            else:
+                i += 1
+            continue
+
+        if quote:
+            chars[i] = ' '
+            if ch == '\\' and next_ch:
+                chars[i + 1] = ' '
+                i += 2
+                continue
+            if ch == quote:
+                if quote in ("'", '"') and next_ch == quote:
+                    chars[i + 1] = ' '
+                    i += 2
+                    continue
+                quote = None
+            i += 1
+            continue
+
+        if ch == '-' and next_ch == '-':
+            chars[i] = chars[i + 1] = ' '
+            line_comment = True
+            i += 2
+        elif ch == '/' and next_ch == '*':
+            chars[i] = chars[i + 1] = ' '
+            block_comment = True
+            i += 2
+        elif ch in ("'", '"', '`'):
+            chars[i] = ' '
+            quote = ch
+            i += 1
+        else:
+            i += 1
+
+    return ''.join(chars)
+
+
+def get_pyformat_insert_values_template(statement):
+    """Return the terminal pyformat INSERT values tuple, if present."""
+    if not isinstance(statement, str):
+        return None
+
+    masked = _mask_sql_literals_and_comments(statement)
+    match = _pyformat_insert_values_re.search(masked)
+    if match is None:
+        return None
+    return statement[match.start('template'):match.end('template')]
+
+
+def strip_pyformat_insert_values_template(statement, values_template=None):
+    """Remove an exact terminal pyformat values tuple from an INSERT."""
+    if not isinstance(statement, str):
+        return statement
+
+    if values_template is None:
+        values_template = get_pyformat_insert_values_template(statement)
+    if not values_template:
+        return statement
+
+    stripped_statement = statement.rstrip()
+    if not stripped_statement.endswith(values_template):
+        return statement
+
+    template_start = len(stripped_statement) - len(values_template)
+    template_end = len(stripped_statement)
+    masked = _mask_sql_literals_and_comments(stripped_statement)
+    if masked[template_start:template_end] != values_template:
+        return statement
+
+    prefix = stripped_statement[:-len(values_template)].rstrip()
+    if _values_suffix_re.search(prefix) is None:
+        return statement
+    return prefix
+
 
 def _scan_type_expression(value):
     """Yield every character of *value* with its bracket depth and quote state.

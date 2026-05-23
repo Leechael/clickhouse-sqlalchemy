@@ -155,3 +155,125 @@ class AsynchConnectorParamTestCase(TestCase):
 
         self.assertEqual(statement, 'INSERT INTO events (id, payload) VALUES')
         self.assertIs(params, rows)
+
+    def test_strip_pyformat_values_template_handles_multiline_insert(self):
+        rows = [{'id': 1, 'payload': ['a']}]
+
+        statement, params = _strip_pyformat_values_template(
+            'INSERT INTO events (\n'
+            '    id,\n'
+            '    payload\n'
+            ')\n'
+            'VALUES (\n'
+            '    %(id)s,\n'
+            '    %(payload)s\n'
+            ')',
+            rows
+        )
+
+        self.assertEqual(
+            statement,
+            'INSERT INTO events (\n'
+            '    id,\n'
+            '    payload\n'
+            ')\n'
+            'VALUES'
+        )
+        self.assertIs(params, rows)
+
+    def test_strip_pyformat_values_template_ignores_trailing_comment(self):
+        rows = [{'id': 1}]
+        original = (
+            'INSERT INTO events (id) VALUES (%(id)s) '
+            '-- VALUES (%(id)s) appears after the insert template'
+        )
+
+        statement, params = _strip_pyformat_values_template(original, rows)
+
+        self.assertEqual(statement, original)
+        self.assertIs(params, rows)
+
+    def test_strip_pyformat_values_template_ignores_trailing_string(self):
+        rows = [{'id': 1}]
+        original = (
+            "INSERT INTO events (id) VALUES (%(id)s) "
+            "SETTINGS note='VALUES appears after the insert template'"
+        )
+
+        statement, params = _strip_pyformat_values_template(original, rows)
+
+        self.assertEqual(statement, original)
+        self.assertIs(params, rows)
+
+    def test_strip_pyformat_values_template_ignores_non_insert_statement(self):
+        rows = [{'id': 1}]
+        original = "SELECT 'VALUES (%(id)s)'"
+
+        statement, params = _strip_pyformat_values_template(original, rows)
+
+        self.assertEqual(statement, original)
+        self.assertIs(params, rows)
+
+    def test_strip_pyformat_values_template_uses_compiled_template(self):
+        table = Table(
+            'events', MetaData(),
+            Column('id', ch_types.UInt32),
+            Column('payload', ch_types.String),
+            engines.Memory()
+        )
+        compiled = table.insert().values(
+            id=bindparam('id'), payload=bindparam('payload')
+        ).compile(dialect=ClickHouseDialect_asynch())
+        context = type('Context', (), {'compiled': compiled})()
+        rows = [{'id': 1, 'payload': 'a'}]
+
+        statement, params = _strip_pyformat_values_template(
+            compiled.string, rows, context=context
+        )
+
+        self.assertEqual(statement, 'INSERT INTO events (id, payload) VALUES')
+        self.assertIs(params, rows)
+
+    def test_strip_pyformat_values_template_requires_compiled_match(self):
+        table = Table(
+            'events', MetaData(),
+            Column('id', ch_types.UInt32),
+            Column('payload', ch_types.String),
+            engines.Memory()
+        )
+        compiled = table.insert().values(
+            id=bindparam('id'), payload=bindparam('payload')
+        ).compile(dialect=ClickHouseDialect_asynch())
+        context = type('Context', (), {'compiled': compiled})()
+        original = 'INSERT INTO events (id) VALUES (%(id)s)'
+        rows = [{'id': 1}]
+
+        statement, params = _strip_pyformat_values_template(
+            original, rows, context=context
+        )
+
+        self.assertEqual(statement, original)
+        self.assertIs(params, rows)
+
+    def test_strip_pyformat_values_template_rejects_comment_match(self):
+        table = Table(
+            'events', MetaData(),
+            Column('id', ch_types.UInt32),
+            engines.Memory()
+        )
+        compiled = table.insert().values(
+            id=bindparam('id')
+        ).compile(dialect=ClickHouseDialect_asynch())
+        context = type('Context', (), {'compiled': compiled})()
+        original = (
+            'INSERT INTO events (id) VALUES (%(id)s) '
+            '-- VALUES (%(id)s)'
+        )
+        rows = [{'id': 1}]
+
+        statement, params = _strip_pyformat_values_template(
+            original, rows, context=context
+        )
+
+        self.assertEqual(statement, original)
+        self.assertIs(params, rows)
