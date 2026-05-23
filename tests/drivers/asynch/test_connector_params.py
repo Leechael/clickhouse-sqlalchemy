@@ -234,6 +234,23 @@ class AsynchConnectorParamTestCase(TestCase):
         self.assertEqual(statement, 'INSERT INTO events (id, payload) VALUES')
         self.assertIs(params, rows)
 
+    def test_strip_pyformat_values_template_handles_bind_expression(self):
+        table = Table(
+            'events', MetaData(),
+            Column('address', ch_types.IPv6),
+            engines.Memory()
+        )
+        compiled = table.insert().compile(dialect=ClickHouseDialect_asynch())
+        context = type('Context', (), {'compiled': compiled})()
+        rows = [{'address': '2001:db8::1'}]
+
+        statement, params = _strip_pyformat_values_template(
+            compiled.string, rows, context=context
+        )
+
+        self.assertEqual(statement, 'INSERT INTO events (address) VALUES')
+        self.assertIs(params, rows)
+
     def test_strip_pyformat_values_template_requires_compiled_match(self):
         table = Table(
             'events', MetaData(),

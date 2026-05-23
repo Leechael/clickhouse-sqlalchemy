@@ -1,20 +1,9 @@
 import re
 
 
-_pyformat_insert_values_re = re.compile(
-    r"""
-    \A\s*INSERT\b.*\bVALUES\s*
-    (?P<template>
-        \(
-            \s*%\([^)]+\)s
-            (?:\s*,\s*%\([^)]+\)s)*
-            \s*
-        \)
-    )
-    \s*\Z
-    """,
-    re.IGNORECASE | re.VERBOSE | re.DOTALL,
-)
+_insert_prefix_re = re.compile(r'\A\s*INSERT\b', re.IGNORECASE)
+_pyformat_placeholder_re = re.compile(r'%\([^)]+\)s')
+_values_word_re = re.compile(r'\bVALUES\b', re.IGNORECASE)
 _values_suffix_re = re.compile(r'\bVALUES\s*\Z', re.IGNORECASE)
 
 
@@ -86,10 +75,45 @@ def get_pyformat_insert_values_template(statement):
         return None
 
     masked = _mask_sql_literals_and_comments(statement)
-    match = _pyformat_insert_values_re.search(masked)
-    if match is None:
+    if _insert_prefix_re.search(masked) is None:
         return None
-    return statement[match.start('template'):match.end('template')]
+
+    values_matches = tuple(_values_word_re.finditer(masked))
+    if not values_matches:
+        return None
+
+    values_end = values_matches[-1].end()
+    template_start = values_end
+    while (
+        template_start < len(masked)
+        and masked[template_start].isspace()
+    ):
+        template_start += 1
+
+    if template_start >= len(masked) or masked[template_start] != '(':
+        return None
+
+    depth = 0
+    template_end = None
+    for index in range(template_start, len(masked)):
+        char = masked[index]
+        if char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+            if depth == 0:
+                template_end = index + 1
+                break
+
+    if template_end is None:
+        return None
+    if masked[template_end:].strip():
+        return None
+
+    template = statement[template_start:template_end]
+    if _pyformat_placeholder_re.search(template) is None:
+        return None
+    return template
 
 
 def strip_pyformat_insert_values_template(statement, values_template=None):
