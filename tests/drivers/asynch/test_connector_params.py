@@ -31,6 +31,15 @@ class AsynchConnectorParamTestCase(TestCase):
         )
         return compiled._process_parameters_for_postcompile(compiled_params)
 
+    def _context_with_values_template(self, values_template):
+        class Compiled:
+            _clickhouse_insert_values_template = values_template
+
+        class Context:
+            compiled = Compiled()
+
+        return Context()
+
     def test_asynch_compiler_renders_execute_literals_with_sqlalchemy(self):
         state = self._postcompile(
             text(
@@ -146,18 +155,40 @@ class AsynchConnectorParamTestCase(TestCase):
 
     def test_strip_pyformat_values_template_for_executemany(self):
         rows = [{'id': 1, 'payload': ['a']}]
+        context = self._context_with_values_template(
+            '(%(id)s, %(payload)s)'
+        )
 
         statement, params = _strip_pyformat_values_template(
             'INSERT INTO events (id, payload) '
             'VALUES (%(id)s, %(payload)s)',
-            rows
+            rows,
+            context=context,
         )
 
         self.assertEqual(statement, 'INSERT INTO events (id, payload) VALUES')
         self.assertIs(params, rows)
 
+    def test_strip_pyformat_values_template_requires_context(self):
+        rows = [{'id': 1, 'payload': ['a']}]
+        original = (
+            'INSERT INTO events (id, payload) '
+            'VALUES (%(id)s, %(payload)s)'
+        )
+
+        statement, params = _strip_pyformat_values_template(original, rows)
+
+        self.assertEqual(statement, original)
+        self.assertIs(params, rows)
+
     def test_strip_pyformat_values_template_handles_multiline_insert(self):
         rows = [{'id': 1, 'payload': ['a']}]
+        context = self._context_with_values_template(
+            '(\n'
+            '    %(id)s,\n'
+            '    %(payload)s\n'
+            ')'
+        )
 
         statement, params = _strip_pyformat_values_template(
             'INSERT INTO events (\n'
@@ -168,7 +199,8 @@ class AsynchConnectorParamTestCase(TestCase):
             '    %(id)s,\n'
             '    %(payload)s\n'
             ')',
-            rows
+            rows,
+            context=context,
         )
 
         self.assertEqual(
@@ -183,33 +215,42 @@ class AsynchConnectorParamTestCase(TestCase):
 
     def test_strip_pyformat_values_template_ignores_trailing_comment(self):
         rows = [{'id': 1}]
+        context = self._context_with_values_template('(%(id)s)')
         original = (
             'INSERT INTO events (id) VALUES (%(id)s) '
             '-- VALUES (%(id)s) appears after the insert template'
         )
 
-        statement, params = _strip_pyformat_values_template(original, rows)
+        statement, params = _strip_pyformat_values_template(
+            original, rows, context=context
+        )
 
         self.assertEqual(statement, original)
         self.assertIs(params, rows)
 
     def test_strip_pyformat_values_template_ignores_trailing_string(self):
         rows = [{'id': 1}]
+        context = self._context_with_values_template('(%(id)s)')
         original = (
             "INSERT INTO events (id) VALUES (%(id)s) "
             "SETTINGS note='VALUES appears after the insert template'"
         )
 
-        statement, params = _strip_pyformat_values_template(original, rows)
+        statement, params = _strip_pyformat_values_template(
+            original, rows, context=context
+        )
 
         self.assertEqual(statement, original)
         self.assertIs(params, rows)
 
     def test_strip_pyformat_values_template_ignores_non_insert_statement(self):
         rows = [{'id': 1}]
-        original = "SELECT 'VALUES (%(id)s)'"
+        context = self._context_with_values_template('(%(id)s)')
+        original = "SELECT (%(id)s)"
 
-        statement, params = _strip_pyformat_values_template(original, rows)
+        statement, params = _strip_pyformat_values_template(
+            original, rows, context=context
+        )
 
         self.assertEqual(statement, original)
         self.assertIs(params, rows)

@@ -19,14 +19,18 @@ def _strip_pyformat_values_template(operation, params, context=None):
     if not isinstance(params, (list, tuple)):
         return operation, params
 
-    compiled = getattr(context, 'compiled', None)
-    values_template = getattr(
-        compiled, '_clickhouse_insert_values_template', None
+    try:
+        values_template = context.compiled._clickhouse_insert_values_template
+    except AttributeError:
+        return operation, params
+
+    if values_template is None:
+        return operation, params
+
+    return (
+        strip_pyformat_insert_values_template(operation, values_template),
+        params,
     )
-    statement = strip_pyformat_insert_values_template(
-        operation, values_template
-    )
-    return statement, params
 
 
 class AsyncAdapt_asynch_cursor:
