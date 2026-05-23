@@ -109,12 +109,19 @@ class ClickHouseExecutionContextBase(default.DefaultExecutionContext):
         cls, dialect, connection, dbapi_connection, execution_options,
         compiled, parameters, invoked_statement, extracted_parameters,
         cache_hit=default.CacheStats.CACHING_DISABLED,
+        **kwargs,
     ):
         cls._validate_nested_insert_parameter_groups(compiled, parameters)
+        if (
+            'param_dict' not in
+            default.DefaultExecutionContext._init_compiled.__code__.co_varnames
+        ):
+            kwargs.pop('param_dict', None)
         return super(ClickHouseExecutionContextBase, cls)._init_compiled(
             dialect, connection, dbapi_connection, execution_options,
             compiled, parameters, invoked_statement, extracted_parameters,
             cache_hit=cache_hit,
+            **kwargs
         )
 
     @staticmethod
