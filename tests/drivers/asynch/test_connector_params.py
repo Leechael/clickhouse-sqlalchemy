@@ -24,6 +24,34 @@ class AsynchConnectorParamTestCase(TestCase):
         self.assertEqual(_escape_param((Color.red, UUID(int=1))),
                          "('red', '00000000-0000-0000-0000-000000000001')")
 
+    def test_escape_param_formats_nested_container_literals(self):
+        class Color(Enum):
+            red = 'red'
+
+        self.assertEqual(_escape_param([]), '[]')
+        self.assertEqual(_escape_param(()), '()')
+        self.assertEqual(
+            _escape_param([
+                ["O'Brien", None],
+                (Color.red, UUID(int=1)),
+                [date(2026, 1, 2), datetime(2026, 1, 2, 3, 4, 5)],
+            ]),
+            "[['O\\'Brien', NULL], "
+            "('red', '00000000-0000-0000-0000-000000000001'), "
+            "['2026-01-02', '2026-01-02 03:04:05']]"
+        )
+
+    def test_escape_param_formats_flattened_nested_child_arrays(self):
+        self.assertEqual(_escape_param(['alice', 'bob']),
+                         "['alice', 'bob']")
+        self.assertEqual(_escape_param([34, 29]), '[34, 29]')
+
+    def test_escape_param_formats_unflattened_nested_tuple_array_literal(self):
+        self.assertEqual(
+            _escape_param([('alice', 34), ('bob', 29)]),
+            "[('alice', 34), ('bob', 29)]"
+        )
+
     def test_substitute_pyformat_params_rewrites_mapping(self):
         statement, params = _substitute_pyformat_params(
             'SELECT * FROM events WHERE name = %(name)s AND ts = %(ts)s',
