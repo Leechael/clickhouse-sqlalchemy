@@ -135,21 +135,16 @@ class ClickHouseExecutionContextBase(default.DefaultExecutionContext):
         mismatch early so the error message mentions the Nested column name
         rather than the cryptic expanded keys.
         """
-        if not (getattr(compiled, 'isinsert', False) and parameters):
-            return
+        try:
+            if not compiled.isinsert or not parameters:
+                return
 
-        insert_stmt = getattr(compiled, 'statement', None)
-        if insert_stmt is None:
-            return
+            insert_stmt = compiled.statement
+            if insert_stmt.select is not None or insert_stmt._values:
+                return
 
-        if (
-            getattr(insert_stmt, 'select', None) is not None or
-            getattr(insert_stmt, '_values', None)
-        ):
-            return
-
-        table = getattr(insert_stmt, 'table', None)
-        if table is None:
+            table = insert_stmt.table
+        except AttributeError:
             return
 
         nested_columns = ClickHouseDialect._get_nested_insert_columns(table)
@@ -688,22 +683,16 @@ class ClickHouseDialect(default.DefaultDialect):
         clear error because the unflattened array-of-structs shape is not yet
         supported.
         """
-        if not (context and context.isinsert and parameters):
-            return statement, parameters
+        try:
+            if not context.isinsert or not parameters:
+                return statement, parameters
 
-        compiled = getattr(context, 'compiled', None)
-        insert_stmt = getattr(compiled, 'statement', None)
-        if insert_stmt is None:
-            return statement, parameters
+            insert_stmt = context.compiled.statement
+            if insert_stmt.select is not None or insert_stmt._values:
+                return statement, parameters
 
-        if (
-            getattr(insert_stmt, 'select', None) is not None or
-            getattr(insert_stmt, '_values', None)
-        ):
-            return statement, parameters
-
-        table = getattr(insert_stmt, 'table', None)
-        if table is None:
+            table = insert_stmt.table
+        except AttributeError:
             return statement, parameters
 
         nested_columns = self._get_nested_insert_columns(table)
@@ -748,10 +737,14 @@ class ClickHouseDialect(default.DefaultDialect):
         )
         parameters = expanded if is_many else expanded[0]
 
-        if hasattr(context, 'parameters'):
+        try:
             context.parameters = parameters
-        if hasattr(context, 'compiled_parameters'):
+        except AttributeError:
+            pass
+        try:
             context.compiled_parameters = expanded
+        except AttributeError:
+            pass
 
         return statement, parameters
 
@@ -759,13 +752,14 @@ class ClickHouseDialect(default.DefaultDialect):
     def _get_nested_insert_columns(table):
         """Return all ``Nested`` columns on *table* (cached on the table)."""
         cache_key = '_clickhouse_sqlalchemy_nested_insert_columns'
-        nested_columns = getattr(table, cache_key, None)
-        if nested_columns is None:
+        try:
+            return getattr(table, cache_key)
+        except AttributeError:
             nested_columns = tuple(
                 c for c in table.columns if isinstance(c.type, types.Nested)
             )
             setattr(table, cache_key, nested_columns)
-        return nested_columns
+            return nested_columns
 
     @staticmethod
     def _validate_expanded_nested_rows(rows):
@@ -1025,7 +1019,7 @@ class ClickHouseDialect(default.DefaultDialect):
     def _render_insert_prefixes(self, insert_stmt):
         prefixes = []
         compiler = self.statement_compiler(self, insert_stmt)
-        for clause, dialect_name in getattr(insert_stmt, '_prefixes', ()):
+        for clause, dialect_name in insert_stmt._prefixes:
             if dialect_name in ('*', self.name):
                 prefixes.append(compiler.process(clause))
 

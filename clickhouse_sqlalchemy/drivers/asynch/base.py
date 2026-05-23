@@ -31,7 +31,10 @@ class ClickHouseAsynchSQLCompiler(ClickHouseNativeSQLCompiler):
         )
 
     def _is_textual_insert(self):
-        statement_text = getattr(self.statement, 'text', None)
+        try:
+            statement_text = self.statement.text
+        except AttributeError:
+            return False
         return (
             isinstance(statement_text, str)
             and statement_text.lstrip().upper().startswith('INSERT')

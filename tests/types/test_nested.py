@@ -19,9 +19,10 @@ class NestedTypeTestCase(BaseTestCase):
             transport.ch_settings['flatten_nested'] = str(flatten_nested)
         else:
             old_setting = None
-            settings = dict(
-                connection.get_execution_options().get('settings') or {}
-            )
+            try:
+                settings = dict(connection.get_execution_options()['settings'])
+            except KeyError:
+                settings = {}
             settings['flatten_nested'] = flatten_nested
             connection = connection.execution_options(settings=settings)
 
