@@ -219,11 +219,27 @@ def parse_arguments(param_string):
 
 
 def parse_named_type_argument(argument):
-    """Split a ClickHouse named argument such as ```name` String``.
+    """Split a ClickHouse named type argument into ``(name, type_spec)``.
 
-    Returns ``(name, type_spec)`` when the argument contains an
-    unquoted space separating the identifier from the type;
-    otherwise returns ``(None, argument)`` for unnamed arguments.
+    In ClickHouse DESCRIBE output, Tuple and Nested fields carry
+    per-field names formatted as ``name TypeSpec``.  This function
+    locates the first whitespace that sits outside parentheses and
+    quotes, splits there, and strips backtick / double-quote wrappers
+    from the name.
+
+    Returns ``(None, argument)`` when no top-level split point exists
+    (i.e. the argument is an unnamed type expression).
+
+    Examples::
+
+        >>> parse_named_type_argument('name String')
+        ('name', 'String')
+        >>> parse_named_type_argument('`full name` String')
+        ('full name', 'String')
+        >>> parse_named_type_argument('value Map(String, Nullable(String))')
+        ('value', 'Map(String, Nullable(String))')
+        >>> parse_named_type_argument('Tuple(String, UInt32)')
+        (None, 'Tuple(String, UInt32)')
     """
     argument = argument.strip()
 
@@ -239,9 +255,23 @@ def parse_named_type_argument(argument):
 
 
 def parse_string_literal(value):
-    """Remove surrounding quotes from a SQL string literal and unescape it.
+    """Strip surrounding SQL quotes and unescape the content.
 
-    If *value* is not quoted, returns it unchanged.
+    Recognises single-quoted (``'...'``) and double-quoted (``"..."``)
+    literals.  Both backslash escapes (``\\'``) and doubled-quote
+    escapes (``''``) are handled.  Backtick-wrapped values and
+    unquoted values are returned unchanged.
+
+    Examples::
+
+        >>> parse_string_literal("'Asia/Shanghai'")
+        'Asia/Shanghai'
+        >>> parse_string_literal("'O''Brien'")
+        "O'Brien"
+        >>> parse_string_literal('0')
+        '0'
+        >>> parse_string_literal('`tz`')
+        '`tz`'
     """
     value = value.strip()
     if len(value) < 2 or value[0] != value[-1] or value[0] not in "'\"":
