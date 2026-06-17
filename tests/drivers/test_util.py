@@ -305,6 +305,14 @@ class ParseNamedTypeArgumentTestCase(TestCase):
             (None, '`` String')
         )
 
+    def test_quoted_whitespace_name(self):
+        # Quoted whitespace-only name: returned as-is (differs from
+        # empty backtick name above, which collapses to unnamed).
+        self.assertEqual(
+            parse_named_type_argument('"  " String'),
+            ('  ', 'String')
+        )
+
 
 class ParseStringLiteralTestCase(TestCase):
 
@@ -360,6 +368,10 @@ class ParseStringLiteralTestCase(TestCase):
     def test_backslash_quote(self):
         self.assertEqual(parse_string_literal(r"'O\\'Brien'"), r"O\'Brien")
 
+    def test_backslash_escaped_quote_alone(self):
+        # Single backslash escaping a quote, on its own.
+        self.assertEqual(parse_string_literal(r"'O\'Brien'"), "O'Brien")
+
     def test_escaped_backslash(self):
         self.assertEqual(parse_string_literal("'\\\\'"), '\\')
 
@@ -379,6 +391,11 @@ class ParseStringLiteralTestCase(TestCase):
             parse_string_literal('"a ""quoted"" value"'),
             'a "quoted" value'
         )
+
+    def test_doubled_quote_at_end(self):
+        # Doubled quote right before the closing quote = escaped literal.
+        self.assertEqual(parse_string_literal("'a'''"), "a'")
+        self.assertEqual(parse_string_literal('"a"""'), 'a"')
 
     # --- mixed escapes ---
 
