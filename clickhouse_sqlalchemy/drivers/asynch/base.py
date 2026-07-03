@@ -20,10 +20,16 @@ class ClickHouseAsynchExecutionContext(ClickHouseExecutionContext):
 
 class ClickHouseAsynchSQLCompiler(ClickHouseNativeSQLCompiler):
     def visit_bindparam(self, bindparam, **kw):
+        # Only inline binds for raw text() queries where the asynch driver
+        # has no type information.  Typed Core/ORM statements (SELECT,
+        # UPDATE, DELETE) should stay parameterized so that Map/JSON/binary
+        # values are handled by the driver's escape_param instead of being
+        # forced into SQLAlchemy literal rendering.
         if (
             not self.isinsert
             and not self._is_textual_insert()
             and not kw.get('literal_binds')
+            and isinstance(self.statement, TextClause)
         ):
             kw['literal_execute'] = True
         return super(ClickHouseAsynchSQLCompiler, self).visit_bindparam(

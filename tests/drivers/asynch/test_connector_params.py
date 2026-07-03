@@ -2,7 +2,8 @@ from datetime import date, datetime
 from unittest import TestCase
 from uuid import UUID
 
-from sqlalchemy import Column, MetaData, bindparam, exc, text
+from sqlalchemy import Column, MetaData, bindparam, exc, select, text, update
+from sqlalchemy import delete
 from sqlalchemy.sql.elements import quoted_name
 from sqlalchemy.types import TypeDecorator
 
@@ -335,3 +336,89 @@ class AsynchConnectorParamTestCase(TestCase):
 
         self.assertEqual(statement, original)
         self.assertIs(params, rows)
+
+    def test_asynch_compiler_keeps_map_param_for_typed_statement(self):
+        table = Table(
+            'events', MetaData(),
+            Column('m', ch_types.Map(ch_types.String, ch_types.String)),
+            engines.Memory()
+        )
+        compiled = select(table).where(
+            table.c.m == {'a': 'b'}
+        ).compile(dialect=ClickHouseDialect_asynch())
+
+        self.assertEqual(compiled.literal_execute_params, frozenset())
+        self.assertIn('%(m_1)s', compiled.string)
+
+        params = compiled.construct_params(
+            {'m_1': {'a': 'b'}}, escape_names=False
+        )
+        state = compiled._process_parameters_for_postcompile(params)
+
+        self.assertEqual(state.parameters, {'m_1': {'a': 'b'}})
+        self.assertIn('%(m_1)s', state.statement)
+
+    def test_asynch_compiler_keeps_json_param_for_typed_statement(self):
+        table = Table(
+            'events', MetaData(),
+            Column('j', ch_types.JSON),
+            engines.Memory()
+        )
+        compiled = select(table).where(
+            table.c.j == {'a': 'b'}
+        ).compile(dialect=ClickHouseDialect_asynch())
+
+        self.assertEqual(compiled.literal_execute_params, frozenset())
+        self.assertIn('%(j_1)s', compiled.string)
+
+        params = compiled.construct_params(
+            {'j_1': {'a': 'b'}}, escape_names=False
+        )
+        state = compiled._process_parameters_for_postcompile(params)
+
+        self.assertEqual(state.parameters, {'j_1': {'a': 'b'}})
+        self.assertIn('%(j_1)s', state.statement)
+
+    def test_asynch_compiler_keeps_bytes_param_for_typed_statement(self):
+        table = Table(
+            'events', MetaData(),
+            Column('b', ch_types.String),
+            engines.Memory()
+        )
+        value = b'a\x00b'
+        compiled = select(table).where(
+            table.c.b == value
+        ).compile(dialect=ClickHouseDialect_asynch())
+
+        self.assertEqual(compiled.literal_execute_params, frozenset())
+        self.assertIn('%(b_1)s', compiled.string)
+
+        params = compiled.construct_params(
+            {'b_1': value}, escape_names=False
+        )
+        state = compiled._process_parameters_for_postcompile(params)
+
+        self.assertEqual(state.parameters, {'b_1': value})
+        self.assertIn('%(b_1)s', state.statement)
+
+    def test_asynch_compiler_keeps_params_for_select_update_delete(self):
+        table = Table(
+            'events', MetaData(),
+            Column('x', ch_types.UInt32),
+            Column('s', ch_types.String),
+            engines.Memory()
+        )
+        statements = (
+            select(table).where(table.c.x == 1),
+            update(table).where(table.c.x == 1).values(s='a'),
+            delete(table).where(table.c.x == 1),
+        )
+
+        for statement in statements:
+            with self.subTest(statement=type(statement).__name__):
+                compiled = statement.compile(
+                    dialect=ClickHouseDialect_asynch()
+                )
+
+                self.assertEqual(compiled.literal_execute_params, frozenset())
+                self.assertIn('%(x_1)s', compiled.string)
