@@ -17,6 +17,7 @@ from .compilers.sqlcompiler import ClickHouseSQLCompiler
 from .compilers.typecompiler import ClickHouseTypeCompiler
 from .reflection import ClickHouseInspector
 from .util import (
+    _split_option,
     get_inner_spec, parse_arguments, parse_named_type_argument,
     parse_string_literal,
 )
@@ -511,7 +512,7 @@ class ClickHouseDialect(default.DefaultDialect):
             if not option:
                 continue
 
-            name, value = option.split('=', 1)
+            name, value = _split_option(option)
             name = parse_string_literal(name)
             options[name] = int(value.strip())
 

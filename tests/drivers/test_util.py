@@ -1,7 +1,7 @@
 from unittest import TestCase
 
 from clickhouse_sqlalchemy.drivers.util import (
-    _scan_type_expression,
+    _scan_type_expression, _split_option,
     get_inner_spec, parse_arguments, parse_named_type_argument,
     parse_string_literal
 )
@@ -464,8 +464,21 @@ class ParsingPipelineTestCase(TestCase):
         inner = get_inner_spec("Enum8('O''Brien' = 1, 'plain' = 2)")
         options = parse_arguments(inner)
 
-        name0, _ = options[0].split('=', 1)
+        name0, _ = _split_option(options[0])
         self.assertEqual(parse_string_literal(name0), "O'Brien")
 
-        name1, _ = options[1].split('=', 1)
+        name1, _ = _split_option(options[1])
         self.assertEqual(parse_string_literal(name1), 'plain')
+
+    def test_enum_option_equals_inside_quoted_name(self):
+        """Regression: _split_option must not split on '=' inside quotes."""
+        inner = get_inner_spec("Enum8('a=b' = 1, 'c' = 2)")
+        options = parse_arguments(inner)
+
+        name0, value0 = _split_option(options[0])
+        self.assertEqual(parse_string_literal(name0), 'a=b')
+        self.assertEqual(value0, '1')
+
+        name1, value1 = _split_option(options[1])
+        self.assertEqual(parse_string_literal(name1), 'c')
+        self.assertEqual(value1, '2')

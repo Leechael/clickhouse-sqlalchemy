@@ -218,6 +218,20 @@ def parse_arguments(param_string):
     return tuple(params)
 
 
+def _split_option(option):
+    """Split ``'name' = value`` on the first ``=`` outside quotes.
+
+    Returns ``(raw_name, raw_value)`` where *raw_name* still has its
+    surrounding quotes intact (suitable for ``parse_string_literal``).
+
+    Raises ``ValueError`` when no top-level ``=`` is found.
+    """
+    for i, ch, bracket_level, quote in _scan_type_expression(option):
+        if ch == '=' and bracket_level == 0 and quote is None:
+            return option[:i].strip(), option[i + 1:].strip()
+    raise ValueError("No '=' separator found in: {!r}".format(option))
+
+
 def parse_named_type_argument(argument):
     """Split a ClickHouse named type argument into ``(name, type_spec)``.
 
