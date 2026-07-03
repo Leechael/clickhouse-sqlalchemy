@@ -29,7 +29,7 @@ colspecs = {}
 
 _flatten_nested_set_re = re.compile(
     r'^\s*SET\s+(.+?)\s*;?\s*$',
-    re.IGNORECASE,
+    re.IGNORECASE | re.DOTALL,
 )
 
 

@@ -1673,3 +1673,46 @@ class FlattenNestedDisabledDetectionTestCase(TestCase):
             self.context, cursor
         )
         self.assertFalse(result)
+
+
+class RememberFlattenNestedSettingMultilineTestCase(TestCase):
+    """Regression: _flatten_nested_set_re must match multi-line SET."""
+
+    def setUp(self):
+        self.dialect = ClickHouseDialect_http()
+
+    def _make_mock_cursor(self):
+        cursor = MagicMock()
+        # Use a real object so WeakKeyDictionary can store it.
+        cursor._connection = MagicMock()
+        return cursor
+
+    def test_single_line_set_remembered(self):
+        cursor = self._make_mock_cursor()
+        self.dialect._remember_flatten_nested_setting(
+            'SET flatten_nested = 0', cursor
+        )
+        self.assertEqual(
+            self.dialect._get_remembered_flatten_nested_setting(cursor),
+            '0'
+        )
+
+    def test_multiline_set_first_line_remembered(self):
+        cursor = self._make_mock_cursor()
+        self.dialect._remember_flatten_nested_setting(
+            'SET flatten_nested = 0,\nmax_threads = 4', cursor
+        )
+        self.assertEqual(
+            self.dialect._get_remembered_flatten_nested_setting(cursor),
+            '0'
+        )
+
+    def test_multiline_set_second_line_remembered(self):
+        cursor = self._make_mock_cursor()
+        self.dialect._remember_flatten_nested_setting(
+            'SET max_threads = 4,\nflatten_nested = 0', cursor
+        )
+        self.assertEqual(
+            self.dialect._get_remembered_flatten_nested_setting(cursor),
+            '0'
+        )
