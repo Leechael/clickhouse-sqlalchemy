@@ -7,7 +7,8 @@ from sqlalchemy.sql import type_api
 from sqlalchemy.sql.ddl import CreateTable
 
 from clickhouse_sqlalchemy import Table, engines, types
-from clickhouse_sqlalchemy.drivers.base import ClickHouseDialect
+from clickhouse_sqlalchemy.drivers.base import ClickHouseDialect, \
+    ClickHouseExecutionContextBase
 from clickhouse_sqlalchemy.drivers.http import connector
 from clickhouse_sqlalchemy.drivers.http.base import ClickHouseDialect_http
 from clickhouse_sqlalchemy.drivers.native import connector as native_connector
@@ -827,3 +828,413 @@ class FlattenedNestedInsertExecutionTestCase(TestCase):
                 'members.age': [34],
             }
         )
+
+    def test_flatten_nested_with_column_key_different_from_name(self):
+        """Nested insert rewriting must use column.key for parameter lookup.
+
+        SQLAlchemy compiles INSERT parameters with keys derived from
+        ``column.key``, not ``column.name``.  When a column has
+        ``Column('colname', String, key='pykey')``, the compiled parameter
+        dict uses ``'pykey'`` as the key.  The Nested expansion and INSERT
+        rewriting must use ``column.key`` for all parameter-dict lookups
+        (while still using ``column.name`` for SQL column references).
+
+        Two sub-scenarios:
+
+        1. Non-Nested column with ``key != name`` — value must appear in
+           the rewritten INSERT; otherwise it is silently dropped and the
+           server fills in the default.
+
+        2. Nested column itself with ``key != name`` — the nested dict must
+           be expanded into dotted keys; otherwise the raw dict reaches the
+           driver and causes a protocol error.
+        """
+        table = Table(
+            'family_renamed',
+            MetaData(),
+            Column('colname', types.String, key='pykey'),
+            Column(
+                'mynest',
+                types.Nested(
+                    Column('a', types.UInt32),
+                    Column('b', types.String),
+                ),
+                key='mynest_attr',
+            ),
+            engines.Memory()
+        )
+        self.table = table
+
+        statement, parameters = self._execute_with_http_cursor_patch(
+            'execute',
+            {
+                'pykey': 'hello',
+                'mynest_attr': {
+                    'a': [1],
+                    'b': ['x'],
+                },
+            }
+        )
+
+        self.assertEqual(
+            statement,
+            'INSERT INTO family_renamed '
+            '(colname, mynest.a, mynest.b) '
+            'VALUES (%(pykey)s, %(mynest.a)s, %(mynest.b)s)'
+        )
+        self.assertEqual(
+            parameters,
+            {
+                'pykey': 'hello',
+                'mynest.a': [1],
+                'mynest.b': ['x'],
+            }
+        )
+
+    def test_flatten_nested_batch_with_column_key_different_from_name(self):
+        table = Table(
+            'family_renamed_batch',
+            MetaData(),
+            Column('colname', types.String, key='pykey'),
+            Column(
+                'mynest',
+                types.Nested(
+                    Column('a', types.UInt32),
+                    Column('b', types.String),
+                ),
+                key='mynest_attr',
+            ),
+            engines.Memory()
+        )
+        self.table = table
+
+        statement, parameters = self._execute_with_http_cursor_patch(
+            'executemany',
+            [
+                {
+                    'pykey': 'hello',
+                    'mynest_attr': {
+                        'a': [1],
+                        'b': ['x'],
+                    },
+                },
+                {
+                    'pykey': 'world',
+                    'mynest_attr': {
+                        'a': [2],
+                        'b': ['y'],
+                    },
+                },
+            ]
+        )
+
+        self.assertEqual(
+            statement,
+            'INSERT INTO family_renamed_batch '
+            '(colname, mynest.a, mynest.b) '
+            'VALUES (%(pykey)s, %(mynest.a)s, %(mynest.b)s)'
+        )
+        self.assertEqual(
+            parameters,
+            [
+                {
+                    'pykey': 'hello',
+                    'mynest.a': [1],
+                    'mynest.b': ['x'],
+                },
+                {
+                    'pykey': 'world',
+                    'mynest.a': [2],
+                    'mynest.b': ['y'],
+                },
+            ]
+        )
+
+
+class NestedInsertColumnKeyUnitTestCase(TestCase):
+    """Direct unit tests for each method in the Nested insert rewriting
+    pipeline, verifying column.key lookup in isolation."""
+
+    def setUp(self):
+        self.meta = MetaData()
+        self.nested_column = Column(
+            'nest_name',
+            types.Nested(
+                Column('a_name', types.UInt32),
+                Column('b_name', types.String),
+            ),
+            key='nest_key',
+        )
+        self.plain_column = Column(
+            'plain_name', types.String, key='plain_key'
+        )
+        self.table = Table(
+            'test_table',
+            self.meta,
+            Column('id', types.UInt32),
+            self.plain_column,
+            self.nested_column,
+            engines.Memory()
+        )
+
+    # -- _get_nested_insert_columns ---------------------------------------
+
+    def test_get_nested_insert_columns_returns_nested_columns(self):
+        result = ClickHouseDialect._get_nested_insert_columns(self.table)
+        self.assertEqual(len(result), 1)
+        self.assertIs(result[0], self.nested_column)
+
+    # -- _expand_nested_insert_row ----------------------------------------
+
+    def test_expand_nested_row_finds_column_by_key(self):
+        """Expansion must look up top-level nested column by column.key."""
+        row = {'plain_key': 'val', 'nest_key': {'a_name': [1], 'b_name': ['x']}}
+        result, changed = ClickHouseDialect._expand_nested_insert_row(
+            row, (self.nested_column,)
+        )
+
+        self.assertTrue(changed)
+        self.assertEqual(result['plain_key'], 'val')
+        self.assertEqual(result['nest_name.a_name'], [1])
+        self.assertEqual(result['nest_name.b_name'], ['x'])
+        self.assertNotIn('nest_key', result)
+
+    def test_expand_nested_row_without_nested_data_not_changed(self):
+        """Row without nested column data is returned unchanged."""
+        row = {'plain_key': 'val', 'id': 42}
+        result, changed = ClickHouseDialect._expand_nested_insert_row(
+            row, (self.nested_column,)
+        )
+
+        self.assertFalse(changed)
+        self.assertEqual(result, {'plain_key': 'val', 'id': 42})
+
+    def test_expand_nested_row_rejects_unknown_child_by_name(self):
+        row = {'nest_key': {'a_name': [1], 'typo': ['bad']}}
+        with self.assertRaisesRegex(
+            ValueError,
+            r"got unknown child keys \['typo'\]"
+        ):
+            ClickHouseDialect._expand_nested_insert_row(
+                row, (self.nested_column,)
+            )
+
+    def test_expand_nested_row_rejects_missing_child_by_name(self):
+        row = {'nest_key': {'a_name': [1]}}
+        with self.assertRaisesRegex(
+            ValueError,
+            r"missing child keys \['b_name'\]"
+        ):
+            ClickHouseDialect._expand_nested_insert_row(
+                row, (self.nested_column,)
+            )
+
+    # -- _render_flattened_nested_insert ----------------------------------
+
+    @patch.object(ClickHouseDialect, '_get_server_version_info',
+                  return_value=(24, 8, 1))
+    @patch.object(ClickHouseDialect, '_get_default_schema_name',
+                  return_value='default')
+    def test_render_insert_includes_non_nested_column_by_key(self, *_):
+        """Non-Nested column must be found via column.key in expanded row."""
+        engine = create_engine('clickhouse://localhost/default')
+        dialect = engine.dialect
+
+        # This is what an _expanded_ row looks like after
+        # _expand_nested_insert_row — the regular columns still use
+        # column.key, nested children use dotted column.name.
+        expanded_row = {
+            'plain_key': 'hello',
+            'nest_name.a_name': [1],
+            'nest_name.b_name': ['x'],
+        }
+
+        statement = dialect._render_flattened_nested_insert(
+            self.table, expanded_row, self.table.insert(),
+            include_values_template=True
+        )
+
+        self.assertEqual(
+            statement,
+            'INSERT INTO test_table '
+            '(plain_name, nest_name.a_name, nest_name.b_name) '
+            'VALUES (%(plain_key)s, %(nest_name.a_name)s, '
+            '%(nest_name.b_name)s)'
+        )
+
+    @patch.object(ClickHouseDialect, '_get_server_version_info',
+                  return_value=(24, 8, 1))
+    @patch.object(ClickHouseDialect, '_get_default_schema_name',
+                  return_value='default')
+    def test_render_insert_skips_non_nested_column_not_in_row(self, *_):
+        """Column not in the row is excluded (id omitted)."""
+        engine = create_engine('clickhouse://localhost/default')
+        dialect = engine.dialect
+
+        expanded_row = {
+            'nest_name.a_name': [1],
+            'nest_name.b_name': ['x'],
+        }
+
+        statement = dialect._render_flattened_nested_insert(
+            self.table, expanded_row, self.table.insert(),
+            include_values_template=True
+        )
+
+        self.assertEqual(
+            statement,
+            'INSERT INTO test_table '
+            '(nest_name.a_name, nest_name.b_name) '
+            'VALUES (%(nest_name.a_name)s, %(nest_name.b_name)s)'
+        )
+
+    @patch.object(ClickHouseDialect, '_get_server_version_info',
+                  return_value=(24, 8, 1))
+    @patch.object(ClickHouseDialect, '_get_default_schema_name',
+                  return_value='default')
+    def test_render_insert_uses_column_name_for_sql_not_key(self, *_):
+        """SQL columns use column.name, bind params use column.key."""
+        engine = create_engine('clickhouse://localhost/default')
+        dialect = engine.dialect
+
+        expanded_row = {'plain_key': 'val'}
+
+        statement = dialect._render_flattened_nested_insert(
+            self.table, expanded_row, self.table.insert(),
+            include_values_template=True
+        )
+
+        # SQL column is 'plain_name' (column.name), bind is %(plain_key)s
+        self.assertEqual(
+            statement,
+            'INSERT INTO test_table '
+            '(plain_name) VALUES (%(plain_key)s)'
+        )
+
+    # -- _validate_nested_insert_parameter_groups -------------------------
+
+    def test_validate_parameter_groups_uses_column_key(self):
+        """Batch validation must check column.key in the parameter dicts."""
+
+        class FakeCompiled:
+            isinsert = True
+
+            class statement:
+                select = None
+                _values = None
+                table = self.table
+
+        parameters = [
+            {'id': 1, 'nest_key': {'a_name': [1], 'b_name': ['x']}},
+            {'id': 2, 'nest_key': {'a_name': [2], 'b_name': ['y']}},
+        ]
+
+        # Should not raise — both rows have nest_key
+        ClickHouseExecutionContextBase._validate_nested_insert_parameter_groups(
+            FakeCompiled, parameters
+        )
+
+    def test_validate_parameter_groups_raises_on_sparse_key(self):
+        """Batch rows with different nested column presence must raise."""
+
+        class FakeCompiled:
+            isinsert = True
+
+            class statement:
+                select = None
+                _values = None
+                table = self.table
+
+        parameters = [
+            {'id': 1, 'nest_key': {'a_name': [1], 'b_name': ['x']}},
+            {'id': 2},  # missing nest_key
+        ]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            'Every row in a batch INSERT must include the same '
+            'Nested columns'
+        ):
+            ClickHouseExecutionContextBase._validate_nested_insert_parameter_groups(
+                FakeCompiled, parameters
+            )
+
+    # -- Edge cases -------------------------------------------------------
+
+    def test_expand_nested_row_only_nonnested_has_key_mismatch(self):
+        """Only the non-Nested column has key != name; Nested is key==name."""
+        t = Table(
+            'edge1',
+            MetaData(),
+            Column('plain_name', types.String, key='plain_key'),
+            Column('nest', types.Nested(
+                Column('a', types.UInt32),
+                Column('b', types.String),
+            )),
+            engines.Memory()
+        )
+        nested_cols = ClickHouseDialect._get_nested_insert_columns(t)
+
+        row = {'plain_key': 'hello', 'nest': {'a': [1], 'b': ['x']}}
+        result, changed = ClickHouseDialect._expand_nested_insert_row(
+            row, nested_cols
+        )
+
+        self.assertTrue(changed)
+        self.assertEqual(result['plain_key'], 'hello')
+        self.assertEqual(result['nest.a'], [1])
+        self.assertEqual(result['nest.b'], ['x'])
+        self.assertNotIn('nest', result)
+
+    def test_expand_nested_row_only_nested_has_key_mismatch(self):
+        """Only the Nested column has key != name; plain is key==name."""
+        t = Table(
+            'edge2',
+            MetaData(),
+            Column('id', types.UInt32),
+            Column(
+                'nest_name',
+                types.Nested(
+                    Column('a', types.UInt32),
+                    Column('b', types.String),
+                ),
+                key='nest_key',
+            ),
+            engines.Memory()
+        )
+        nested_cols = ClickHouseDialect._get_nested_insert_columns(t)
+
+        row = {'id': 1, 'nest_key': {'a': [1], 'b': ['x']}}
+        result, changed = ClickHouseDialect._expand_nested_insert_row(
+            row, nested_cols
+        )
+
+        self.assertTrue(changed)
+        self.assertEqual(result['id'], 1)
+        self.assertEqual(result['nest_name.a'], [1])
+        self.assertEqual(result['nest_name.b'], ['x'])
+        self.assertNotIn('nest_key', result)
+
+    def test_expand_nested_row_no_columns_have_key_mismatch(self):
+        """All columns have key == name (existing behavior)."""
+        t = Table(
+            'edge3',
+            MetaData(),
+            Column('id', types.UInt32),
+            Column('nest', types.Nested(
+                Column('a', types.UInt32),
+                Column('b', types.String),
+            )),
+            engines.Memory()
+        )
+        nested_cols = ClickHouseDialect._get_nested_insert_columns(t)
+
+        row = {'id': 1, 'nest': {'a': [1], 'b': ['x']}}
+        result, changed = ClickHouseDialect._expand_nested_insert_row(
+            row, nested_cols
+        )
+
+        self.assertTrue(changed)
+        self.assertEqual(result['id'], 1)
+        self.assertEqual(result['nest.a'], [1])
+        self.assertEqual(result['nest.b'], ['x'])

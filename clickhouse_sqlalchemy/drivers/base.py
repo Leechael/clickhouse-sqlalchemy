@@ -157,19 +157,19 @@ class ClickHouseExecutionContextBase(default.DefaultExecutionContext):
             return
 
         expected = {
-            column.name
+            column.key
             for row in parameters
             for column in nested_columns
-            if column.name in row
+            if column.key in row
         }
         if not expected:
             return
 
         for index, row in enumerate(parameters, 1):
             present = {
-                column.name
+                column.key
                 for column in nested_columns
-                if column.name in row
+                if column.key in row
             }
             if present != expected:
                 raise ValueError(
@@ -706,7 +706,7 @@ class ClickHouseDialect(default.DefaultDialect):
 
         if self._flatten_nested_disabled(context, cursor):
             if any(
-                column.name in row
+                column.key in row
                 for row in rows
                 for column in nested_columns
             ):
@@ -919,10 +919,10 @@ class ClickHouseDialect(default.DefaultDialect):
         changed = False
 
         for column in nested_columns:
-            if column.name not in expanded:
+            if column.key not in expanded:
                 continue
 
-            nested_value = expanded[column.name]
+            nested_value = expanded[column.key]
             if isinstance(nested_value, (list, tuple)):
                 raise NotImplementedError(
                     "Row-oriented Nested payloads are not supported. For "
@@ -938,7 +938,7 @@ class ClickHouseDialect(default.DefaultDialect):
                 )
 
             changed = True
-            expanded.pop(column.name)
+            expanded.pop(column.key)
             child_names = {child.name for child in column.type.columns}
             provided_names = set(nested_value)
             extra_names = provided_names - child_names
@@ -1003,9 +1003,9 @@ class ClickHouseDialect(default.DefaultDialect):
                     binds.append('%%(%s)s' % bind_name)
                 continue
 
-            if column.name in row:
+            if column.key in row:
                 columns.append(preparer.format_column(column))
-                binds.append('%%(%s)s' % column.name)
+                binds.append('%%(%s)s' % column.key)
 
         prefixes = self._render_insert_prefixes(insert_stmt)
         text = 'INSERT%s INTO %s (%s) VALUES' % (
