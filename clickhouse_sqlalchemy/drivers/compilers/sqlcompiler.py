@@ -466,11 +466,7 @@ class ClickHouseSQLCompiler(compiler.SQLCompiler):
             return 'NULL'
         if isinstance(value, uuid.UUID):
             type_ = types.UUID()
-        elif (
-            isinstance(type_, sqltypes.NullType)
-            or type_.__class__.__name__ == 'NullType'
-            or str(type_).upper() == 'NULL'
-        ):
+        elif isinstance(type_, sqltypes.NullType):
             if isinstance(value, str):
                 type_ = sqltypes.String()
             else:

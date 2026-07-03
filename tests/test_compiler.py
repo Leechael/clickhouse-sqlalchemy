@@ -51,6 +51,33 @@ class VisitTestCase(CompilationTestCase):
         with self.assertRaises(TypeError):
             self.session.query(literal(0)).all()
 
+    def test_render_literal_value_detects_nulltype_by_isinstance_only(self):
+        from sqlalchemy.sql.type_api import UserDefinedType
+        from clickhouse_sqlalchemy.drivers.base import clickhouse_dialect
+        from clickhouse_sqlalchemy.drivers.compilers.sqlcompiler import (
+            ClickHouseSQLCompiler,
+        )
+
+        class NullColSpecUDT(UserDefinedType):
+            __visit_name__ = 'user_defined'
+
+            def get_col_spec(self, **kwargs):
+                return 'Null'
+
+            def literal_processor(self, dialect):
+                def process(value):
+                    return 'CUSTOM_' + str(value)
+                return process
+
+        compiler = ClickHouseSQLCompiler(clickhouse_dialect, None)
+        custom_type = NullColSpecUDT()
+
+        # str(custom_type).upper() == 'NULL' would be True because
+        # get_col_spec returns 'Null'.  The old code would mistakenly
+        # re-type to String, bypassing literal_processor.
+        result = compiler.render_literal_value('hello', custom_type)
+        self.assertEqual(result, 'CUSTOM_hello')
+
 
 class VisitNativeTestCase(NativeSessionTestCase):
     def test_insert_no_templates_after_value(self):
