@@ -785,7 +785,9 @@ class ClickHouseDialect(default.DefaultDialect):
 
         Checked in priority order:
         1. ``execution_options['settings']['flatten_nested']``
-        2. The underlying transport's stored settings (HTTP driver)
+        2. The underlying transport's stored settings:
+           - HTTP: ``transport.ch_settings['flatten_nested']``
+           - Native: ``transport.settings['flatten_nested']``
         3. The most recent ``SET flatten_nested = X`` on this connection
         """
         try:
@@ -799,12 +801,9 @@ class ClickHouseDialect(default.DefaultDialect):
         if self._is_true_setting(option_setting):
             return False
 
-        try:
-            transport_setting = (
-                cursor._connection.transport.ch_settings['flatten_nested']
-            )
-        except (AttributeError, KeyError, TypeError):
-            transport_setting = None
+        transport_setting = self._get_transport_flatten_nested_setting(
+            cursor
+        )
         if self._is_false_setting(transport_setting):
             return True
         if self._is_true_setting(transport_setting):
@@ -813,6 +812,42 @@ class ClickHouseDialect(default.DefaultDialect):
         return self._is_false_setting(
             self._get_remembered_flatten_nested_setting(cursor)
         )
+
+    @staticmethod
+    def _get_transport_flatten_nested_setting(cursor):
+        """Read ``flatten_nested`` from the driver-specific transport.
+
+        HTTP driver stores settings as ``transport.ch_settings`` (a dict
+        of str→str).  Native driver stores them as ``transport.settings``
+        (``clickhouse_driver.Client.settings``, also a str→str dict).
+        Asynch has no ``transport`` attribute at all and returns ``None``.
+        """
+        if cursor is None:
+            return None
+        try:
+            transport = cursor._connection.transport
+        except AttributeError:
+            return None
+
+        # HTTP driver (RequestsTransport)
+        try:
+            ch_settings = transport.ch_settings
+        except AttributeError:
+            pass
+        else:
+            if isinstance(ch_settings, dict):
+                return ch_settings.get('flatten_nested')
+
+        # Native driver (clickhouse_driver.Client)
+        try:
+            native_settings = transport.settings
+        except AttributeError:
+            pass
+        else:
+            if isinstance(native_settings, dict):
+                return native_settings.get('flatten_nested')
+
+        return None
 
     def _remember_flatten_nested_setting(self, statement, cursor):
         """Cache the value of a ``SET flatten_nested = X`` statement.

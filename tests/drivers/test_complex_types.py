@@ -1560,3 +1560,116 @@ class NestedInsertColumnCacheInvalidationTestCase(TestCase):
             ClickHouseExecutionContextBase._validate_nested_insert_parameter_groups(
                 FakeCompiled, parameters
             )
+
+
+class FlattenNestedDisabledDetectionTestCase(TestCase):
+    """Regression: _flatten_nested_disabled must detect flatten_nested=0
+    across all three drivers (HTTP, native, asynch), not just HTTP."""
+
+    class FakeContext:
+        execution_options = {}
+
+    def setUp(self):
+        self.dialect = ClickHouseDialect_http()
+        self.context = self.FakeContext()
+
+    def _make_mock_cursor(self, transport_attrs=None):
+        """Build a mock cursor whose _connection has configurable transport.
+
+        transport_attrs is a dict of attribute→value to set on a mock
+        transport object.  If None, the connection has no transport.
+        """
+        cursor = MagicMock()
+        if transport_attrs is not None:
+            transport = MagicMock()
+            for attr, value in transport_attrs.items():
+                setattr(transport, attr, value)
+            cursor._connection.transport = transport
+        else:
+            del cursor._connection.transport
+        return cursor
+
+    # -- HTTP driver: ch_settings ----------------------------------------
+
+    def test_http_transport_ch_settings_zero_is_disabled(self):
+        cursor = self._make_mock_cursor(
+            {'ch_settings': {'flatten_nested': '0'}}
+        )
+        result = self.dialect._flatten_nested_disabled(
+            self.context, cursor
+        )
+        self.assertTrue(result)
+
+    def test_http_transport_ch_settings_one_is_enabled(self):
+        cursor = self._make_mock_cursor(
+            {'ch_settings': {'flatten_nested': '1'}}
+        )
+        result = self.dialect._flatten_nested_disabled(
+            self.context, cursor
+        )
+        self.assertFalse(result)
+
+    # -- Native driver: Client.settings dict -----------------------------
+
+    def test_native_transport_settings_zero_is_disabled(self):
+        cursor = self._make_mock_cursor(
+            {'settings': {'flatten_nested': '0'}}
+        )
+        result = self.dialect._flatten_nested_disabled(
+            self.context, cursor
+        )
+        self.assertTrue(result)
+
+    def test_native_transport_settings_one_is_enabled(self):
+        cursor = self._make_mock_cursor(
+            {'settings': {'flatten_nested': '1'}}
+        )
+        result = self.dialect._flatten_nested_disabled(
+            self.context, cursor
+        )
+        self.assertFalse(result)
+
+    # -- Asynch driver: no transport attribute ---------------------------
+
+    def test_asynch_no_transport_falls_through_to_remembered(self):
+        cursor = self._make_mock_cursor(transport_attrs=None)
+        # With no transport and no remembered setting, should NOT crash
+        # with AttributeError and should return False.
+        result = self.dialect._flatten_nested_disabled(
+            self.context, cursor
+        )
+        self.assertFalse(result)
+
+    # -- Execution options always take priority --------------------------
+
+    def test_execution_options_override_transport_setting(self):
+        cursor = self._make_mock_cursor(
+            {'ch_settings': {'flatten_nested': '0'}}
+        )
+        self.context.execution_options = {
+            'settings': {'flatten_nested': 1}
+        }
+        result = self.dialect._flatten_nested_disabled(
+            self.context, cursor
+        )
+        self.assertFalse(result)
+
+    # -- bool / int / string variants of False ---------------------------
+
+    def test_native_transport_settings_false_bool(self):
+        cursor = self._make_mock_cursor(
+            {'settings': {'flatten_nested': False}}
+        )
+        result = self.dialect._flatten_nested_disabled(
+            self.context, cursor
+        )
+        self.assertTrue(result)
+
+    def test_native_transport_settings_true_bool(self):
+        cursor = self._make_mock_cursor(
+            {'settings': {'flatten_nested': True}}
+        )
+        result = self.dialect._flatten_nested_disabled(
+            self.context, cursor
+        )
+        self.assertFalse(result)
