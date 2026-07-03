@@ -820,32 +820,47 @@ class ClickHouseDialect(default.DefaultDialect):
         HTTP driver stores settings as ``transport.ch_settings`` (a dict
         of str→str).  Native driver stores them as ``transport.settings``
         (``clickhouse_driver.Client.settings``, also a str→str dict).
-        Asynch has no ``transport`` attribute at all and returns ``None``.
+
+        Asynch stores settings in the underlying proto Connection's
+        ``settings`` dict at ``cursor._connection._connection.settings``.
         """
         if cursor is None:
             return None
         try:
             transport = cursor._connection.transport
         except AttributeError:
+            pass
+        else:
+            # HTTP driver (RequestsTransport)
+            try:
+                ch_settings = transport.ch_settings
+            except AttributeError:
+                pass
+            else:
+                if isinstance(ch_settings, dict):
+                    return ch_settings.get('flatten_nested')
+
+            # Native driver (clickhouse_driver.Client)
+            try:
+                native_settings = transport.settings
+            except AttributeError:
+                pass
+            else:
+                if isinstance(native_settings, dict):
+                    return native_settings.get('flatten_nested')
+
             return None
 
-        # HTTP driver (RequestsTransport)
+        # asynch driver: cursor._connection is asynch.connection.Connection,
+        # which wraps proto Connection that holds settings.
         try:
-            ch_settings = transport.ch_settings
+            proto_conn = cursor._connection._connection
+            proto_settings = proto_conn.settings
         except AttributeError:
             pass
         else:
-            if isinstance(ch_settings, dict):
-                return ch_settings.get('flatten_nested')
-
-        # Native driver (clickhouse_driver.Client)
-        try:
-            native_settings = transport.settings
-        except AttributeError:
-            pass
-        else:
-            if isinstance(native_settings, dict):
-                return native_settings.get('flatten_nested')
+            if isinstance(proto_settings, dict):
+                return proto_settings.get('flatten_nested')
 
         return None
 

@@ -1629,12 +1629,57 @@ class FlattenNestedDisabledDetectionTestCase(TestCase):
         )
         self.assertFalse(result)
 
-    # -- Asynch driver: no transport attribute ---------------------------
+    # -- Asynch driver: proto Connection.settings ------------------------
 
-    def test_asynch_no_transport_falls_through_to_remembered(self):
-        cursor = self._make_mock_cursor(transport_attrs=None)
-        # With no transport and no remembered setting, should NOT crash
-        # with AttributeError and should return False.
+    def _make_asynch_mock_cursor(self, proto_settings=None):
+        """Build a mock cursor simulating asynch's nested connection.
+
+        asynch cursor._connection is asynch.connection.Connection, which
+        has _connection pointing to proto Connection.  The proto
+        Connection holds the server settings dict at .settings.
+        """
+        cursor = MagicMock()
+        del cursor._connection.transport
+        if proto_settings is not None:
+            proto_conn = MagicMock()
+            proto_conn.settings = proto_settings
+            cursor._connection._connection = proto_conn
+        return cursor
+
+    def test_asynch_proto_settings_zero_is_disabled(self):
+        cursor = self._make_asynch_mock_cursor(
+            {'flatten_nested': '0'}
+        )
+        result = self.dialect._flatten_nested_disabled(
+            self.context, cursor
+        )
+        self.assertTrue(result)
+
+    def test_asynch_proto_settings_one_is_enabled(self):
+        cursor = self._make_asynch_mock_cursor(
+            {'flatten_nested': '1'}
+        )
+        result = self.dialect._flatten_nested_disabled(
+            self.context, cursor
+        )
+        self.assertFalse(result)
+
+    def test_asynch_connection_without_proto_settings(self):
+        # asynch cursor where _connection has _connection but no settings.
+        cursor = MagicMock()
+        del cursor._connection.transport
+        proto_conn = MagicMock(spec=[])
+        cursor._connection._connection = proto_conn
+        result = self.dialect._flatten_nested_disabled(
+            self.context, cursor
+        )
+        self.assertFalse(result)
+
+    def test_asynch_proto_settings_non_dict_is_ignored(self):
+        # proto.settings exists but is not a dict.
+        cursor = self._make_asynch_mock_cursor(
+            proto_settings='not-a-dict'
+        )
         result = self.dialect._flatten_nested_disabled(
             self.context, cursor
         )
