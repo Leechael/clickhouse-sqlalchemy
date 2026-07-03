@@ -1,9 +1,12 @@
+import os
 from datetime import date, datetime
 from unittest import TestCase
+from unittest.mock import MagicMock, patch
 from uuid import UUID
 
+from asynch.proto.connection import Connection as ProtoConnection
 from sqlalchemy import Column, MetaData, bindparam, exc, select, text, update
-from sqlalchemy import delete
+from sqlalchemy import delete, literal_column
 from sqlalchemy.sql.elements import quoted_name
 from sqlalchemy.types import TypeDecorator
 
@@ -447,3 +450,198 @@ class AsynchConnectorParamTestCase(TestCase):
 
                 self.assertEqual(compiled.literal_execute_params, frozenset())
                 self.assertIn('%(x_1)s', compiled.string)
+
+
+class AsynchDoExecutePyformatPreservationTestCase(TestCase):
+    """do_execute must preserve SQLAlchemy's pyformat placeholders.
+
+    The pinned asynch driver substitutes ordinary query parameters with
+    pyformat by default. SQLAlchemy also compiles this dialect with
+    pyformat placeholders, so do_execute must pass statements through
+    unchanged and let the driver interpolate them.
+    """
+
+    def setUp(self):
+        self.dialect = ClickHouseDialect_asynch()
+
+    def _make_mock_cursor(self):
+        cursor = MagicMock()
+        return cursor
+
+    def test_preserves_single_pyformat_placeholder(self):
+        cursor = self._make_mock_cursor()
+        statement = 'SELECT * FROM events WHERE x = %(x_1)s'
+        params = {'x_1': 42}
+
+        self.dialect.do_execute(cursor, statement, params)
+
+        cursor.execute.assert_called_once()
+        actual_statement = cursor.execute.call_args[0][0]
+        self.assertEqual(actual_statement, statement)
+
+    def test_preserves_multiple_pyformat_placeholders(self):
+        cursor = self._make_mock_cursor()
+        statement = (
+            'SELECT * FROM events '
+            'WHERE x = %(x_1)s AND s = %(s_1)s'
+        )
+        params = {'x_1': 42, 's_1': 'hello'}
+
+        self.dialect.do_execute(cursor, statement, params)
+
+        cursor.execute.assert_called_once()
+        actual_statement = cursor.execute.call_args[0][0]
+        self.assertEqual(actual_statement, statement)
+
+    def test_passes_params_unchanged(self):
+        cursor = self._make_mock_cursor()
+        statement = 'SELECT * FROM events WHERE x = %(x_1)s'
+        params = {'x_1': 42}
+
+        self.dialect.do_execute(cursor, statement, params)
+
+        actual_params = cursor.execute.call_args[0][1]
+        self.assertEqual(actual_params, {'x_1': 42})
+
+    def test_no_params_passes_statement_unchanged(self):
+        cursor = self._make_mock_cursor()
+        statement = 'SELECT 1'
+
+        self.dialect.do_execute(cursor, statement, None)
+
+        cursor.execute.assert_called_once()
+        actual_statement = cursor.execute.call_args[0][0]
+        self.assertEqual(actual_statement, statement)
+
+    def test_empty_params_passes_statement_unchanged(self):
+        cursor = self._make_mock_cursor()
+        statement = 'SELECT 1'
+
+        self.dialect.do_execute(cursor, statement, {})
+
+        cursor.execute.assert_called_once()
+        actual_statement = cursor.execute.call_args[0][0]
+        self.assertEqual(actual_statement, statement)
+
+    def test_preserves_update_pyformat_placeholders(self):
+        cursor = self._make_mock_cursor()
+        statement = 'ALTER TABLE events UPDATE s = %(s_1)s WHERE x = %(x_1)s'
+        params = {'s_1': 'new', 'x_1': 42}
+
+        self.dialect.do_execute(cursor, statement, params)
+
+        cursor.execute.assert_called_once()
+        actual_statement = cursor.execute.call_args[0][0]
+        self.assertEqual(actual_statement, statement)
+
+    def test_preserves_compiled_select_pyformat(self):
+        table = Table(
+            'events', MetaData(),
+            Column('x', ch_types.UInt32),
+            Column('s', ch_types.String),
+            engines.Memory()
+        )
+        compiled = select(table).where(
+            table.c.x == 42, table.c.s == 'hello'
+        ).compile(dialect=self.dialect)
+
+        cursor = self._make_mock_cursor()
+        params = compiled.construct_params(
+            {'x_1': 42, 's_1': 'hello'}, escape_names=False
+        )
+        state = compiled._process_parameters_for_postcompile(params)
+
+        self.dialect.do_execute(cursor, state.statement, state.parameters)
+
+        cursor.execute.assert_called_once()
+        actual_statement = cursor.execute.call_args[0][0]
+        self.assertIn('%(x_1)s', actual_statement)
+        self.assertIn('%(s_1)s', actual_statement)
+
+
+class AsynchSubstitutionFidelityTestCase(TestCase):
+    """Statements sent to the asynch cursor must survive the driver's
+    substitution step.
+
+    asynch applies pyformat substitution to every ordinary (non-INSERT)
+    query whenever ``args`` is not None — including an empty dict.  The
+    statement that ``do_execute`` hands to the cursor therefore must keep
+    SQLAlchemy's pyformat placeholders, literal braces, and doubled ``%%``
+    percent literals intact for the driver to process.
+    """
+
+    def setUp(self):
+        self.dialect = ClickHouseDialect_asynch()
+        self.table = Table(
+            'events', MetaData(),
+            Column('x', ch_types.UInt32),
+            Column('s', ch_types.String),
+            engines.Memory()
+        )
+
+    def _do_execute(self, statement, extra_params=None):
+        compiled = statement.compile(dialect=self.dialect)
+        params = compiled.construct_params(
+            extra_params or {}, escape_names=False
+        )
+        state = compiled._process_parameters_for_postcompile(params)
+        cursor = MagicMock()
+        self.dialect.do_execute(
+            cursor, state.statement, dict(state.parameters)
+        )
+        return cursor.execute.call_args[0][0], cursor.execute.call_args[0][1]
+
+    @staticmethod
+    def _driver_substitute(statement, params):
+        """Replicate asynch's process_ordinary_query substitution.
+
+        See asynch.proto.connection.Connection.substitute_params: the
+        driver uses pyformat by default whenever params is not None.
+        """
+        if params is None:
+            return statement
+        with patch.dict(
+            os.environ, {'ASYNCH_SUBSTITUTE_PARAMS_STYLE': 'pyformat'}
+        ):
+            return ProtoConnection.substitute_params(statement, params)
+
+    def test_literal_braces_survive_driver_substitution(self):
+        # A JSON string literal in the SQL text is a plain ClickHouse
+        # idiom (e.g. comparing a String column against a JSON payload).
+        statement = select(self.table.c.x).where(
+            self.table.c.x == 5,
+            literal_column('payload = \'{"k":1}\''),
+        )
+        sent_statement, sent_params = self._do_execute(statement)
+
+        final = self._driver_substitute(sent_statement, sent_params)
+
+        self.assertIn('\'{"k":1}\'', final)
+        self.assertIn('5', final)
+
+    def test_percent_literal_reaches_server_undoubled(self):
+        # SQLAlchemy escapes literal % as %% for the pyformat paramstyle.
+        # The native driver undoes that via `query % params`; asynch's
+        # default pyformat substitution must do the same.
+        statement = select(
+            literal_column("'100%'").label('pct'), self.table.c.x
+        ).where(self.table.c.x == 5)
+        sent_statement, sent_params = self._do_execute(statement)
+
+        final = self._driver_substitute(sent_statement, sent_params)
+
+        self.assertIn("'100%'", final)
+        self.assertNotIn("'100%%'", final)
+
+    def test_text_select_brace_value_with_empty_params(self):
+        # text() binds are rendered inline via literal_execute, leaving
+        # an empty params dict.  asynch still applies pyformat for an
+        # empty dict, so braces from the rendered literal must pass through.
+        statement = text('SELECT count(*) FROM events WHERE payload = :j')
+        sent_statement, sent_params = self._do_execute(
+            statement, {'j': '{"k":1}'}
+        )
+
+        final = self._driver_substitute(sent_statement, sent_params)
+
+        self.assertIn('\'{"k":1}\'', final)
