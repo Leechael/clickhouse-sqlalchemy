@@ -1,7 +1,8 @@
 import enum
-from sqlalchemy import sql, Column, literal, literal_column
+from sqlalchemy import sql, Column, func, literal, literal_column
 
 from clickhouse_sqlalchemy import types, Table, engines
+from clickhouse_sqlalchemy.drivers.util import get_pyformat_insert_values_template
 from tests.testcase import CompilationTestCase, NativeSessionTestCase
 
 
@@ -76,3 +77,57 @@ class VisitNativeTestCase(NativeSessionTestCase):
                 literal_binds=True
             ), 'INSERT INTO t1 (x) VALUES (42)'
         )
+
+    def test_values_template_not_stored_for_mixed_expr_values(self):
+        """When .values() mixes SQL expressions with bound parameters,
+        the VALUES template must not be stored on the compiled object.
+        Otherwise asynch's _executemany_async strips it and loses the
+        inline SQL expression, causing KeyError when rebuilding rows."""
+        table = Table(
+            't1', self.metadata(),
+            Column('x', types.Int32),
+            Column('y', types.Int32),
+            engines.Memory()
+        )
+
+        stmt = table.insert().values(x=func.now(), y=42)
+        compiled = self._compile(stmt)
+        sql = str(compiled)
+
+        # SQL keeps the VALUES clause with inline expressions mixed with
+        # pyformat placeholders for plain values.  The regular execute path
+        # (not EXECUTEMANY) handles this, binding plain values while
+        # passing inline expressions through.
+        self.assertIn('now()', sql)
+        self.assertIn('%(y)s', sql)
+
+        # The _clickhouse_insert_values_template attribute must NOT be
+        # present on the compiled object so that _executemany_async won't
+        # try to strip it and pre_exec won't trigger EXECUTEMANY.
+        self.assertFalse(
+            hasattr(compiled, '_clickhouse_insert_values_template')
+        )
+
+    def test_values_template_stored_for_pure_values(self):
+        """When .values() has only plain bound parameters (no SQL
+        expressions), the pure-pyformat template is stored so that
+        asynch can strip and rebuild it correctly."""
+        table = Table(
+            't1', self.metadata(),
+            Column('x', types.Int32),
+            Column('y', types.Int32),
+            engines.Memory()
+        )
+
+        stmt = table.insert().values(x=42, y=43)
+        compiled = self._compile(stmt)
+        sql = str(compiled)
+
+        # SQL preserves the VALUES template for asynch to rebuild.
+        self.assertIn('%(', sql)
+
+        # The stored template must be the pure-pyformat VALUES tuple.
+        template = getattr(
+            compiled, '_clickhouse_insert_values_template', None
+        )
+        self.assertEqual(template, '(%(x)s, %(y)s)')
