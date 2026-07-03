@@ -1008,9 +1008,10 @@ class ClickHouseDialect(default.DefaultDialect):
                 columns.append(preparer.format_column(column))
                 binds.append('%%(%s)s' % column.key)
 
-        prefixes = self._render_insert_prefixes(insert_stmt)
-        text = 'INSERT%s INTO %s (%s) VALUES' % (
-            prefixes,
+        cte_prefix, hint_prefix = self._render_insert_prefixes(insert_stmt)
+        text = '%sINSERT%s INTO %s (%s) VALUES' % (
+            cte_prefix,
+            hint_prefix,
             preparer.format_table(table), ', '.join(columns)
         )
         if include_values_template:
@@ -1018,15 +1019,30 @@ class ClickHouseDialect(default.DefaultDialect):
         return text
 
     def _render_insert_prefixes(self, insert_stmt):
-        prefixes = []
+        """Render INSERT statement prefixes (CTE WITH clause, hints).
+
+        Returns ``(cte_prefix, hint_prefix)`` where *cte_prefix* is the
+        ``WITH ...`` clause (with trailing space) and *hint_prefix* is the
+        space-separated ``prefix_with()`` hints.
+        """
         compiler = self.statement_compiler(self, insert_stmt)
+
+        cte_prefix = ''
+        ctes = compiler.ctes
+        if ctes:
+            cte_clauses = list(ctes.values())
+            if cte_clauses:
+                cte_prefix = 'WITH ' + ', '.join(cte_clauses) + ' '
+
+        hint_prefix = ''
+        hint_clauses = []
         for clause, dialect_name in insert_stmt._prefixes:
             if dialect_name in ('*', self.name):
-                prefixes.append(compiler.process(clause))
+                hint_clauses.append(compiler.process(clause))
+        if hint_clauses:
+            hint_prefix = ' ' + ' '.join(hint_clauses)
 
-        if prefixes:
-            return ' ' + ' '.join(prefixes)
-        return ''
+        return cte_prefix, hint_prefix
 
     def _check_unicode_returns(self, connection, additional_tests=None):
         return True

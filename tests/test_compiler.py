@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import sql, Column, func, literal, literal_column
+from sqlalchemy import sql, Column, func, literal, literal_column, select, text
 
 from clickhouse_sqlalchemy import types, Table, engines
 from clickhouse_sqlalchemy.drivers.util import get_pyformat_insert_values_template
@@ -131,3 +131,96 @@ class VisitNativeTestCase(NativeSessionTestCase):
             compiled, '_clickhouse_insert_values_template', None
         )
         self.assertEqual(template, '(%(x)s, %(y)s)')
+
+
+class NestedInsertPrefixTestCase(NativeSessionTestCase):
+    """Regression: INSERT with Nested columns must preserve CTE WITH
+    clauses and prefix_with() hints in the rebuilt SQL."""
+
+    def _nested_table(self):
+        return Table(
+            't1', self.metadata(),
+            Column('x', types.Int32),
+            Column('n', types.Nested(
+                Column('a', types.Int32),
+                Column('b', types.String),
+            )),
+            engines.Memory()
+        )
+
+    def _render_nested(self, stmt):
+        dialect = self.session.bind.dialect
+        row = {'n.a': [1], 'n.b': ['hello']}
+        return dialect._render_flattened_nested_insert(
+            self._nested_table(), row, stmt,
+            include_values_template=True,
+        )
+
+    def test_cte_preserved_with_nested(self):
+        """add_cte() WITH clause must appear in the rewritten INSERT."""
+        cte = select(text('1')).cte('my_cte')
+        stmt = self._nested_table().insert().values(
+            n={'a': [1], 'b': ['hello']}
+        ).add_cte(cte)
+
+        sql = self._render_nested(stmt)
+        self.assertIn('WITH my_cte AS', sql)
+        self.assertIn('INSERT', sql)
+        self.assertTrue(sql.startswith('WITH'))
+
+    def test_prefix_with_preserved_with_nested(self):
+        """prefix_with() hints must appear after INSERT."""
+        stmt = self._nested_table().insert().values(
+            n={'a': [1], 'b': ['hello']}
+        ).prefix_with('SOME_HINT', dialect='*')
+
+        sql = self._render_nested(stmt)
+        self.assertIn('INSERT SOME_HINT INTO', sql)
+
+    def test_cte_and_prefix_with_together(self):
+        """Both CTE and prefix_with() must work together."""
+        cte = select(text('1')).cte('my_cte')
+        stmt = self._nested_table().insert().values(
+            n={'a': [1], 'b': ['hello']}
+        ).add_cte(cte).prefix_with('HINT', dialect='*')
+
+        sql = self._render_nested(stmt)
+        self.assertTrue(sql.startswith('WITH'))
+        self.assertIn('INSERT HINT INTO', sql)
+
+    def test_multiple_ctes_preserved(self):
+        """Multiple CTEs must all appear, comma-separated."""
+        cte1 = select(text('1')).cte('first')
+        cte2 = select(text('2')).cte('second')
+        stmt = self._nested_table().insert().values(
+            n={'a': [1], 'b': ['hello']}
+        ).add_cte(cte1).add_cte(cte2)
+
+        sql = self._render_nested(stmt)
+        self.assertIn('WITH first AS', sql)
+        self.assertIn('second AS', sql)
+        self.assertIn(', ', sql)  # CTEs are comma-separated
+
+    def test_no_cte_no_prefix_is_clean(self):
+        """Without CTE or prefix_with, INSERT must be clean (no regressions)."""
+        stmt = self._nested_table().insert().values(
+            n={'a': [1], 'b': ['hello']}
+        )
+
+        sql = self._render_nested(stmt)
+        self.assertEqual(
+            sql,
+            'INSERT INTO t1 (n.a, n.b) VALUES (%(n.a)s, %(n.b)s)'
+        )
+
+    def test_cte_is_preserved_in_compiled_insert(self):
+        """Full compilation path must preserve CTE for Nested INSERT."""
+        cte = select(text('1')).cte('my_cte')
+        stmt = self._nested_table().insert().values(
+            n={'a': [1], 'b': ['hello']}
+        ).add_cte(cte)
+
+        compiled = self._compile(stmt)
+        sql = str(compiled)
+        # The standard compiler outputs the CTE.
+        self.assertIn('WITH my_cte AS', sql)
