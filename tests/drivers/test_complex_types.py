@@ -1238,3 +1238,325 @@ class NestedInsertColumnKeyUnitTestCase(TestCase):
         self.assertEqual(result['id'], 1)
         self.assertEqual(result['nest.a'], [1])
         self.assertEqual(result['nest.b'], ['x'])
+
+
+class NestedInsertColumnCacheInvalidationTestCase(TestCase):
+    """Regression: _get_nested_insert_columns cache must not be stale.
+
+    The cache lived on the Table object as an attribute and was never
+    invalidated.  After ``append_column`` adds a Nested column or
+    ``extend_existing=True`` redefines the table, the cache returned
+    the empty tuple from the first call, so dict payloads for the new
+    Nested column were not expanded and reached the driver raw.
+    """
+
+    def setUp(self):
+        self.dialect = ClickHouseDialect()
+
+    # -- Unit-level cache behaviour --------------------------------------
+
+    def test_cache_invalidates_after_append_column_adds_nested(self):
+        """After append_column adds a Nested, subsequent cache lookups
+        must return the new column."""
+        table = Table(
+            'appended',
+            MetaData(),
+            Column('id', types.UInt32),
+            engines.Memory()
+        )
+
+        # First call => empty tuple (no Nested columns yet).
+        result1 = ClickHouseDialect._get_nested_insert_columns(table)
+        self.assertEqual(result1, ())
+
+        # Now append a Nested column.
+        nested_col = Column(
+            'tags',
+            types.Nested(
+                Column('key', types.String),
+                Column('value', types.String),
+            )
+        )
+        table.append_column(nested_col)
+
+        # Second call => must see the new Nested column.
+        result2 = ClickHouseDialect._get_nested_insert_columns(table)
+        self.assertEqual(len(result2), 1)
+        self.assertIs(result2[0], nested_col)
+
+    def test_cache_invalidates_after_append_column_adds_second_nested(self):
+        """Adding a second Nested column must be visible."""
+        nested1 = Column(
+            'members',
+            types.Nested(
+                Column('name', types.String),
+                Column('age', types.UInt8),
+            )
+        )
+        table = Table(
+            'multi_appended',
+            MetaData(),
+            Column('id', types.UInt32),
+            nested1,
+            engines.Memory()
+        )
+
+        result1 = ClickHouseDialect._get_nested_insert_columns(table)
+        self.assertEqual(len(result1), 1)
+        self.assertIs(result1[0], nested1)
+
+        nested2 = Column(
+            'pets',
+            types.Nested(
+                Column('name', types.String),
+                Column('kind', types.String),
+            )
+        )
+        table.append_column(nested2)
+
+        result2 = ClickHouseDialect._get_nested_insert_columns(table)
+        self.assertEqual(len(result2), 2)
+        self.assertIs(result2[0], nested1)
+        self.assertIs(result2[1], nested2)
+
+    def test_cache_returns_empty_after_append_column_adds_non_nested(self):
+        """Adding a non-Nested column must not produce false positives."""
+        table = Table(
+            'non_nested_append',
+            MetaData(),
+            Column('id', types.UInt32),
+            engines.Memory()
+        )
+
+        result1 = ClickHouseDialect._get_nested_insert_columns(table)
+        self.assertEqual(result1, ())
+
+        table.append_column(Column('score', types.Float64))
+
+        result2 = ClickHouseDialect._get_nested_insert_columns(table)
+        self.assertEqual(result2, ())
+
+    def test_cache_invalidates_after_extend_existing_redefinition(self):
+        """extend_existing=True redefines columns; cache must reflect that."""
+        meta = MetaData()
+        table = Table(
+            'redef',
+            meta,
+            Column('id', types.UInt32),
+            engines.Memory()
+        )
+
+        result1 = ClickHouseDialect._get_nested_insert_columns(table)
+        self.assertEqual(result1, ())
+
+        # extend_existing=True redefines the same table with a Nested column.
+        nested_col = Column(
+            'items',
+            types.Nested(
+                Column('sku', types.String),
+                Column('qty', types.UInt32),
+            )
+        )
+        Table(
+            'redef',
+            meta,
+            Column('id', types.UInt32),
+            nested_col,
+            engines.Memory(),
+            extend_existing=True
+        )
+
+        result2 = ClickHouseDialect._get_nested_insert_columns(table)
+        self.assertEqual(len(result2), 1)
+        self.assertIs(result2[0], nested_col)
+
+    # -- End-to-end: insert expansion after modify ------------------------
+
+    def test_insert_expands_nested_payload_after_append_column(self):
+        """Insert must expand the Nested dict after the column was
+        added via append_column."""
+        table = Table(
+            'dyn_family',
+            MetaData(),
+            Column('id', types.UInt32),
+            engines.Memory()
+        )
+
+        nested_col = Column(
+            'members',
+            types.Nested(
+                Column('name', types.String),
+                Column('age', types.UInt8),
+            )
+        )
+        table.append_column(nested_col)
+
+        # Force table.columns to be materialised (append_column already
+        # handles this in SA, but be explicit).
+        _ = table.columns
+
+        mocked = MagicMock(
+            side_effect=FlattenedNestedInsertExecutionTestCase.StopExecution
+        )
+        with patch.object(
+            ClickHouseDialect_http, '_get_server_version_info',
+            return_value=(24, 8, 1)
+        ), patch.object(
+            ClickHouseDialect_http, '_get_default_schema_name',
+            return_value='default'
+        ), patch.object(
+            connector.Cursor, 'execute', mocked
+        ):
+            engine = create_engine('clickhouse://localhost/default')
+            statement = table.insert()
+            with TestCase.assertRaises(
+                    self, FlattenedNestedInsertExecutionTestCase.StopExecution
+            ):
+                with engine.connect() as connection:
+                    connection.execute(
+                        statement,
+                        {
+                            'id': 1,
+                            'members': {
+                                'name': ['alice'],
+                                'age': [34],
+                            },
+                        }
+                    )
+
+        operation, parameters = mocked.call_args.args[:2]
+
+        self.assertEqual(
+            operation,
+            'INSERT INTO dyn_family (id, members.name, members.age) '
+            'VALUES (%(id)s, %(members.name)s, %(members.age)s)'
+        )
+        self.assertEqual(
+            parameters,
+            {
+                'id': 1,
+                'members.name': ['alice'],
+                'members.age': [34],
+            }
+        )
+
+    def test_batch_insert_expands_nested_payload_after_append_column(self):
+        """Batch insert must expand Nested dicts after append_column."""
+        table = Table(
+            'dyn_family_batch',
+            MetaData(),
+            Column('id', types.UInt32),
+            engines.Memory()
+        )
+
+        nested_col = Column(
+            'members',
+            types.Nested(
+                Column('name', types.String),
+                Column('age', types.UInt8),
+            )
+        )
+        table.append_column(nested_col)
+
+        mocked = MagicMock(
+            side_effect=FlattenedNestedInsertExecutionTestCase.StopExecution
+        )
+        with patch.object(
+            ClickHouseDialect_http, '_get_server_version_info',
+            return_value=(24, 8, 1)
+        ), patch.object(
+            ClickHouseDialect_http, '_get_default_schema_name',
+            return_value='default'
+        ), patch.object(
+            connector.Cursor, 'executemany', mocked
+        ):
+            engine = create_engine('clickhouse://localhost/default')
+            statement = table.insert()
+            with TestCase.assertRaises(
+                    self, FlattenedNestedInsertExecutionTestCase.StopExecution
+            ):
+                with engine.connect() as connection:
+                    connection.execute(
+                        statement,
+                        [
+                            {
+                                'id': 1,
+                                'members': {
+                                    'name': ['alice', 'bob'],
+                                    'age': [34, 29],
+                                },
+                            },
+                            {
+                                'id': 2,
+                                'members': {
+                                    'name': ['carol'],
+                                    'age': [41],
+                                },
+                            },
+                        ]
+                    )
+
+        operation, parameters = mocked.call_args.args[:2]
+
+        self.assertEqual(
+            operation,
+            'INSERT INTO dyn_family_batch '
+            '(id, members.name, members.age) '
+            'VALUES (%(id)s, %(members.name)s, %(members.age)s)'
+        )
+        self.assertEqual(
+            parameters,
+            [
+                {
+                    'id': 1,
+                    'members.name': ['alice', 'bob'],
+                    'members.age': [34, 29],
+                },
+                {
+                    'id': 2,
+                    'members.name': ['carol'],
+                    'members.age': [41],
+                },
+            ]
+        )
+
+    def test_nested_validation_sees_appended_columns(self):
+        """Batch validation must detect sparse Nested columns added
+        via append_column rather than trusting a stale empty cache."""
+        self.table = Table(
+            'dyn_family_val',
+            MetaData(),
+            Column('id', types.UInt32),
+            engines.Memory()
+        )
+        self.table.append_column(
+            Column(
+                'members',
+                types.Nested(
+                    Column('name', types.String),
+                    Column('age', types.UInt8),
+                )
+            )
+        )
+
+        class FakeCompiled:
+            isinsert = True
+
+            class statement:
+                select = None
+                _values = None
+                table = self.table
+
+        parameters = [
+            {'id': 1, 'members': {'name': ['alice'], 'age': [34]}},
+            {'id': 2},  # missing 'members'
+        ]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            'Every row in a batch INSERT must include the same '
+            'Nested columns'
+        ):
+            ClickHouseExecutionContextBase._validate_nested_insert_parameter_groups(
+                FakeCompiled, parameters
+            )

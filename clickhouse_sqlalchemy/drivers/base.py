@@ -751,16 +751,16 @@ class ClickHouseDialect(default.DefaultDialect):
 
     @staticmethod
     def _get_nested_insert_columns(table):
-        """Return all ``Nested`` columns on *table* (cached on the table)."""
-        cache_key = '_clickhouse_sqlalchemy_nested_insert_columns'
-        try:
-            return getattr(table, cache_key)
-        except AttributeError:
-            nested_columns = tuple(
-                c for c in table.columns if isinstance(c.type, types.Nested)
-            )
-            setattr(table, cache_key, nested_columns)
-            return nested_columns
+        """Return all ``Nested`` columns on *table*.
+
+        Re-evaluated on every call so that ``append_column`` and
+        ``extend_existing=True`` table redefinitions are always
+        visible.  The iteration is cheap (dozens of columns at most)
+        and avoids stale-cache bugs.
+        """
+        return tuple(
+            c for c in table.columns if isinstance(c.type, types.Nested)
+        )
 
     @staticmethod
     def _validate_expanded_nested_rows(rows):
