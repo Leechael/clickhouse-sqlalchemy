@@ -1,3 +1,5 @@
+import re
+
 import asynch
 
 from sqlalchemy.sql.elements import TextClause
@@ -41,10 +43,14 @@ class ClickHouseAsynchSQLCompiler(ClickHouseNativeSQLCompiler):
             statement_text = self.statement.text
         except AttributeError:
             return False
-        return (
-            isinstance(statement_text, str)
-            and statement_text.lstrip().upper().startswith('INSERT')
-        )
+        if not isinstance(statement_text, str):
+            return False
+        # Strip SQL comments before checking for INSERT.
+        # text("-- note\nINSERT ...") should be treated the same as
+        # text("INSERT ...") to keep parameterized binds intact.
+        cleaned = re.sub(r'/\*.*?\*/', '', statement_text, flags=re.DOTALL)
+        cleaned = re.sub(r'--[^\n]*', '', cleaned)
+        return cleaned.lstrip().upper().startswith('INSERT')
 
 
 class ClickHouseDialect_asynch(ClickHouseDialect_native):

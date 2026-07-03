@@ -154,6 +154,31 @@ class AsynchConnectorParamTestCase(TestCase):
         )
         self.assertEqual(compiled.literal_execute_params, frozenset())
 
+    def test_textual_insert_with_line_comment_is_recognized(self):
+        compiled = text(
+            '-- note\nINSERT INTO events (id) VALUES (:id)'
+        ).compile(dialect=ClickHouseDialect_asynch())
+        self.assertEqual(compiled.literal_execute_params, frozenset())
+
+    def test_textual_insert_with_block_comment_is_recognized(self):
+        compiled = text(
+            '/* block */\nINSERT INTO events (id) VALUES (:id)'
+        ).compile(dialect=ClickHouseDialect_asynch())
+        self.assertEqual(compiled.literal_execute_params, frozenset())
+
+    def test_textual_insert_with_multiple_comments_is_recognized(self):
+        compiled = text(
+            '-- header\n/* inline */ INSERT INTO events (id) VALUES (:id)'
+        ).compile(dialect=ClickHouseDialect_asynch())
+        self.assertEqual(compiled.literal_execute_params, frozenset())
+
+    def test_textual_select_with_comment_is_not_misidentified(self):
+        compiled = text(
+            '-- note\nSELECT :x'
+        ).compile(dialect=ClickHouseDialect_asynch())
+        # SELECT with comment should still take literal_execute path
+        self.assertNotEqual(compiled.literal_execute_params, frozenset())
+
     def test_strip_pyformat_values_template_for_executemany(self):
         rows = [{'id': 1, 'payload': ['a']}]
         context = self._context_with_values_template(
