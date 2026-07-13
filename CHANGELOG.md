@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+
+## [0.3.3rc1] - 2026-07-12
 ### Fixed
 - [asynch] SQLAlchemy 2.0.44+ compatibility: implement async cursor soft close hook (`_async_soft_close`). Solves issue [#393](https://github.com/xzkostyan/clickhouse-sqlalchemy/issues/393).
 - [asynch] Pin the driver dependency to [v0.4.0rc2](https://github.com/Leechael/asynch/releases/tag/v0.4.0rc2).
@@ -365,7 +367,8 @@ Log, TinyLog, Null.
 - Chunked `INSERT INTO` in one request.
 - Engines: MergeTree, CollapsingMergeTree, SummingMergeTree, Buffer, Memory.
 
-[Unreleased]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.2...HEAD
+[Unreleased]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.3rc1...HEAD
+[0.3.3rc1]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.2...0.3.3rc1
 [0.3.2]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.1...0.3.2
 [0.3.1]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.2.7...0.3.0
