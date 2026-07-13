@@ -66,6 +66,14 @@ class _UnsupportedTransactionConnection:
         raise asynch.errors.NotSupportedError
 
 
+class _TerminableConnection:
+    def __init__(self):
+        self.terminate_calls = 0
+
+    def terminate(self):
+        self.terminate_calls += 1
+
+
 @pytest.mark.asyncio
 async def test_async_soft_close_exists_and_closes_cursor():
     assert inspect.iscoroutinefunction(
@@ -152,6 +160,18 @@ def test_connect_uses_asynch_connection_constructor():
     )
 
     assert isinstance(connection._connection, asynch.connection.Connection)
+
+
+def test_terminate_delegates_to_asynch_connection():
+    dbapi = AsyncAdapt_asynch_dbapi(asynch)
+    driver_connection = _TerminableConnection()
+    connection = AsyncAdapt_asynch_connection(dbapi, driver_connection)
+
+    connection.terminate()
+    connection.terminate()
+
+    assert ClickHouseDialect_asynch.has_terminate is True
+    assert driver_connection.terminate_calls == 2
 
 
 @pytest.mark.asyncio

@@ -255,3 +255,6 @@ class AsyncAdapt_asynch_connection(AdaptedConnection):
         if inspect.isawaitable(result):
             return self.await_(result)
         return result
+
+    def terminate(self):
+        return self._connection.terminate()

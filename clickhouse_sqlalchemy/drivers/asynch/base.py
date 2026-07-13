@@ -22,6 +22,7 @@ class ClickHouseDialect_asynch(ClickHouseDialect_native):
     is_async = True
     supports_statement_cache = True
     supports_server_side_cursors = True
+    has_terminate = True
 
     @classmethod
     def import_dbapi(cls):

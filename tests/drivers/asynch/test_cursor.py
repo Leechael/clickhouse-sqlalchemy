@@ -120,3 +120,23 @@ async def test_pool_pre_ping_replaces_network_disconnected_connection(
         assert failed_ping is True
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_engine_dispose_closes_asynch_connection():
+    engine = create_async_engine(
+        system_asynch_uri,
+        pool_size=1,
+        max_overflow=0,
+    )
+    try:
+        async with engine.connect() as connection:
+            raw_connection = await connection.get_raw_connection()
+            driver_connection = raw_connection.driver_connection
+            await connection.execute(text('SELECT 42'))
+            assert driver_connection._connection.connected is True
+
+        await engine.dispose()
+        assert driver_connection._connection.connected is False
+    finally:
+        await engine.dispose()
