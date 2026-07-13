@@ -4,7 +4,9 @@ from types import SimpleNamespace
 
 import asynch
 import pytest
+from sqlalchemy import exc
 
+from clickhouse_sqlalchemy.drivers.asynch.base import ClickHouseDialect_asynch
 from clickhouse_sqlalchemy.drivers.asynch.connector import (
     AsyncAdapt_asynch_connection,
     AsyncAdapt_asynch_cursor,
@@ -64,6 +66,14 @@ class _UnsupportedTransactionConnection:
         raise asynch.errors.NotSupportedError
 
 
+class _TerminableConnection:
+    def __init__(self):
+        self.terminate_calls = 0
+
+    def terminate(self):
+        self.terminate_calls += 1
+
+
 @pytest.mark.asyncio
 async def test_async_soft_close_exists_and_closes_cursor():
     assert inspect.iscoroutinefunction(
@@ -99,6 +109,48 @@ async def test_async_soft_close_noop_without_close():
     assert cursor._rows == [("a",)]
 
 
+def test_dbapi_errors_use_asynch_error_hierarchy():
+    dbapi = AsyncAdapt_asynch_dbapi(asynch)
+
+    for name in (
+            'Error',
+            'InterfaceError',
+            'DatabaseError',
+            'DataError',
+            'OperationalError',
+            'IntegrityError',
+            'InternalError',
+            'ProgrammingError',
+            'NotSupportedError',
+    ):
+        assert getattr(dbapi, name) is getattr(asynch.errors, name)
+
+    error = exc.DBAPIError.instance(
+        'SELECT 1',
+        None,
+        asynch.errors.NetworkError('connection lost'),
+        dbapi.Error,
+    )
+    assert isinstance(error, exc.OperationalError)
+
+
+def test_dialect_recognizes_disconnect_error_chain():
+    dialect = ClickHouseDialect_asynch()
+
+    for error in (
+            asynch.errors.NetworkError('connection lost'),
+            asynch.errors.SocketTimeoutError('timed out'),
+    ):
+        assert dialect.is_disconnect(error, None, None) is True
+
+    wrapper = RuntimeError('query failed')
+    wrapper.__cause__ = asynch.errors.NetworkError('connection lost')
+    assert dialect.is_disconnect(wrapper, None, None) is True
+    assert dialect.is_disconnect(
+        ValueError('query failed'), None, None,
+    ) is False
+
+
 def test_connect_uses_asynch_connection_constructor():
     dbapi = AsyncAdapt_asynch_dbapi(asynch)
 
@@ -108,6 +160,18 @@ def test_connect_uses_asynch_connection_constructor():
     )
 
     assert isinstance(connection._connection, asynch.connection.Connection)
+
+
+def test_terminate_delegates_to_asynch_connection():
+    dbapi = AsyncAdapt_asynch_dbapi(asynch)
+    driver_connection = _TerminableConnection()
+    connection = AsyncAdapt_asynch_connection(dbapi, driver_connection)
+
+    connection.terminate()
+    connection.terminate()
+
+    assert ClickHouseDialect_asynch.has_terminate is True
+    assert driver_connection.terminate_calls == 2
 
 
 @pytest.mark.asyncio

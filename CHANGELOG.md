@@ -3,6 +3,9 @@
 ## [Unreleased]
 ### Fixed
 - [asynch] SQLAlchemy 2.0.44+ compatibility: implement async cursor soft close hook (`_async_soft_close`). Solves issue [#393](https://github.com/xzkostyan/clickhouse-sqlalchemy/issues/393).
+- [asynch] Pin the driver dependency to [v0.4.0rc2](https://github.com/Leechael/asynch/releases/tag/v0.4.0rc2).
+- [asynch] Map DBAPI exceptions to the asynch error hierarchy so SQLAlchemy invalidates disconnected pooled connections and replaces them during pre-ping.
+- [asynch] Enable SQLAlchemy pool termination for asynch connections.
 
 ## [0.3.2] - 2024-06-12
 ### Added

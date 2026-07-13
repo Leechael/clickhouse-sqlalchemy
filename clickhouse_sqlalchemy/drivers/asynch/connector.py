@@ -147,11 +147,9 @@ class AsyncAdapt_asynch_dbapi:
         self.paramstyle = 'pyformat'
         self._init_dbapi_attributes()
 
-    class Error(Exception):
-        pass
-
     def _init_dbapi_attributes(self):
         for name in (
+                'Error',
                 'ServerException',
                 'UnexpectedPacketFromServerError',
                 'LogicalError',
@@ -171,6 +169,10 @@ class AsyncAdapt_asynch_dbapi:
                 'StructPackException',
                 'InterfaceError',
                 'DatabaseError',
+                'DataError',
+                'OperationalError',
+                'IntegrityError',
+                'InternalError',
                 'ProgrammingError',
                 'NotSupportedError',
         ):
@@ -253,3 +255,6 @@ class AsyncAdapt_asynch_connection(AdaptedConnection):
         if inspect.isawaitable(result):
             return self.await_(result)
         return result
+
+    def terminate(self):
+        return self._connection.terminate()

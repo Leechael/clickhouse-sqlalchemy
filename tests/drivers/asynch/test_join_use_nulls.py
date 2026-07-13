@@ -6,6 +6,8 @@ from clickhouse_sqlalchemy.drivers.asynch.connector import AsyncAdapt_asynch_dba
 
 class FakeAsynch:
     class errors:
+        class Error(Exception):
+            pass
         class ServerException(Exception):
             pass
         class UnexpectedPacketFromServerError(Exception):
@@ -43,6 +45,14 @@ class FakeAsynch:
         class InterfaceError(Exception):
             pass
         class DatabaseError(Exception):
+            pass
+        class DataError(Exception):
+            pass
+        class OperationalError(Exception):
+            pass
+        class IntegrityError(Exception):
+            pass
+        class InternalError(Exception):
             pass
         class ProgrammingError(Exception):
             pass
