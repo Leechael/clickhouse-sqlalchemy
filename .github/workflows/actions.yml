@@ -65,23 +65,3 @@ jobs:
       - name: Run tests
         run: pdm run coverage --timeout=10 -v
         timeout-minutes: 2
-      - name: Install coveralls
-        run: |
-          pdm install -G coverage
-      - name: Upload coverage
-        run: pdm run coveralls
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COVERALLS_PARALLEL: true
-          COVERALLS_FLAG_NAME: ${{ matrix.python-version }} CH=${{ matrix.clickhouse-version }}
-
-  coveralls-finished:
-    name: Indicate completion to coveralls.io
-    needs: tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Finished
-        uses: coverallsapp/github-action@v2.3.3
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          parallel-finished: true

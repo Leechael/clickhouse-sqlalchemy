@@ -91,7 +91,6 @@ lint = [
 ]
 coverage = [
     "coverage",
-    "coveralls<3.0.0",
 ]
 docs = [
     "sphinx",
