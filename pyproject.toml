@@ -40,7 +40,7 @@ dependencies = [
     "SQLAlchemy>=2.0.0,<2.1.0",
     "requests",
     "clickhouse-driver>=0.1.2",
-    "asynch @ git+https://github.com/Leechael/asynch.git@1a74a71",
+    "asynch @ git+https://github.com/Leechael/asynch.git@v0.4.0rc2",
 ]
 
 [project.urls]
