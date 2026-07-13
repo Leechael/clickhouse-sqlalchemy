@@ -31,6 +31,19 @@ class ClickHouseDialect_asynch(ClickHouseDialect_native):
     def get_pool_class(cls, url):
         return AsyncAdaptedQueuePool
 
+    def is_disconnect(self, e, connection, cursor):
+        seen = set()
+        while e is not None and id(e) not in seen:
+            seen.add(id(e))
+            if isinstance(
+                    e,
+                    (asynch.errors.NetworkError,
+                     asynch.errors.SocketTimeoutError),
+            ):
+                return True
+            e = e.__cause__
+        return False
+
     def _execute(self, connection, sql, scalar=False, **kwargs):
         if isinstance(sql, str):
             # Makes sure the query will go through the
