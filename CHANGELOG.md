@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+### Changed
+- [asynch] Pin the driver dependency to [v0.4.0rc3](https://github.com/Leechael/asynch/releases/tag/v0.4.0rc3). An aware `datetime` bound into an ordinary query is now sent as the instant it denotes rather than as a wall-time string, so a sub-second filter no longer widens to the column's resolution, a timezone-qualified column no longer shifts the value, and a daylight saving fall-back hour no longer makes two instants look alike. Statements carrying their rows as a payload (`VALUES`, `FORMAT`) keep the plain string.
 
 ## [0.3.3rc1] - 2026-07-12
 ### Fixed
