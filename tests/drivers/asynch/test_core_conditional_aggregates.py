@@ -240,6 +240,8 @@ async def test_countif_avgif_aggregates_preserve_nullable_datetime64_values():
     created_at = datetime(2026, 1, 8, 12, 0, 0, 333000)
     delivered_at = datetime(2026, 1, 8, 12, 0, 1, 777000)
 
+    await _require_datediff_millisecond(engine)
+
     try:
         async with engine.begin() as conn:
             await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))

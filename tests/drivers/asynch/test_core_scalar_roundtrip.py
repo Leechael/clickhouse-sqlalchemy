@@ -9,6 +9,8 @@ async def test_grouped_pagination_preserves_decimal_and_datetime64_values():
     billing_start = datetime(2026, 1, 3, 4, 0, 0, 250000)
     billing_end = datetime(2026, 1, 3, 5, 0, 0, 750000)
 
+    await _require_datediff_millisecond(engine)
+
     try:
         async with engine.begin() as conn:
             await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))

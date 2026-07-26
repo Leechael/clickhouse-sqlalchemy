@@ -16,6 +16,7 @@ from sqlalchemy import bindparam
 from sqlalchemy import select
 from sqlalchemy import text
 from sqlalchemy.types import TypeDecorator
+from sqlalchemy.exc import DatabaseError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from clickhouse_sqlalchemy import engines
@@ -95,6 +96,21 @@ def _engine():
             },
         },
     )
+
+
+async def _require_datediff_millisecond(engine):
+    """Skip when the server's dateDiff cannot take a millisecond unit.
+
+    ClickHouse grew that unit after the oldest servers this project tests
+    against. It is the query under test that wants it, not the dialect or the
+    driver, so a server without it has nothing to say about either.
+    """
+
+    async with engine.connect() as conn:
+        try:
+            await conn.execute(text("SELECT dateDiff('millisecond', now(), now())"))
+        except DatabaseError:
+            pytest.skip("server's dateDiff does not support the millisecond unit")
 
 
 async def _drop(engine, table):

@@ -39,16 +39,14 @@ jobs:
           - "3.10"
           - "3.11"
           - "3.12"
+        # 18.14.9 and 19.3.5 are gone. They predate DateTime64, which this
+        # suite uses throughout, so there was never a version of these tests
+        # they could pass; they only looked supported because the matrix bug
+        # above kept them from ever running.
         clickhouse-version:
-          - 18.14.9
-          - 19.3.5
           - 22.5.1.2079
           - 23.8.4.69
         include:
-          - clickhouse-version: 18.14.9
-            clickhouse-org: yandex
-          - clickhouse-version: 19.3.5
-            clickhouse-org: yandex
           - clickhouse-version: 22.5.1.2079
             clickhouse-org: clickhouse
           - clickhouse-version: 23.8.4.69
