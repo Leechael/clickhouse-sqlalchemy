@@ -9,6 +9,8 @@ async def test_select_returns_nested_arrays_and_datetime64_milliseconds():
     failed_at = datetime(2026, 1, 1, 0, 0, 1, 234000)
     completed_at = datetime(2026, 1, 1, 0, 0, 2, 456000)
 
+    await _require_datediff_millisecond(engine)
+
     try:
         async with engine.begin() as conn:
             await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))

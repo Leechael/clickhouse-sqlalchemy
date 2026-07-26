@@ -9,6 +9,8 @@ async def test_window_join_predicates_preserve_datetime64_milliseconds():
     first_end = datetime(2026, 1, 2, 10, 0, 5, 444000)
     second_start = datetime(2026, 1, 2, 10, 1, 0, 555000)
 
+    await _require_datediff_millisecond(engine)
+
     try:
         async with engine.begin() as conn:
             await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
