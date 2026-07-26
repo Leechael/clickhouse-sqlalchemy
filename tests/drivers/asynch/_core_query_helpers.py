@@ -155,6 +155,7 @@ __all__ = [
     "_engine",
     "_execute_each",
     "_fixed_hex",
+    "_require_datediff_millisecond",
     "_table_name",
     "_uuid",
 ]
