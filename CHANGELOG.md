@@ -1,8 +1,11 @@
 # Changelog
 
 ## [Unreleased]
+
+## [0.3.3rc2] - 2026-07-26
 ### Changed
 - [asynch] Pin the driver dependency to [v0.4.0rc3](https://github.com/Leechael/asynch/releases/tag/v0.4.0rc3). An aware `datetime` bound into an ordinary query is now sent as the instant it denotes rather than as a wall-time string, so a sub-second filter no longer widens to the column's resolution, a timezone-qualified column no longer shifts the value, and a daylight saving fall-back hour no longer makes two instants look alike. Statements carrying their rows as a payload (`VALUES`, `FORMAT`) keep the plain string.
+- [ci] The ClickHouse version matrix now runs every server it lists. It previously collapsed to a single one, so only 23.8 was ever exercised. The two servers that predate `DateTime64` are gone, since the suite cannot pass against them, and the verified floor is now 22.5.
 
 ## [0.3.3rc1] - 2026-07-12
 ### Fixed
@@ -369,7 +372,8 @@ Log, TinyLog, Null.
 - Chunked `INSERT INTO` in one request.
 - Engines: MergeTree, CollapsingMergeTree, SummingMergeTree, Buffer, Memory.
 
-[Unreleased]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.3rc1...HEAD
+[Unreleased]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.3rc2...HEAD
+[0.3.3rc2]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.3rc1...0.3.3rc2
 [0.3.3rc1]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.2...0.3.3rc1
 [0.3.2]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.1...0.3.2
 [0.3.1]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.0...0.3.1
