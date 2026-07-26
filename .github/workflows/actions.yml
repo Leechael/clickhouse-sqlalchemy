@@ -25,12 +25,25 @@ jobs:
   tests:
     runs-on: ubuntu-22.04
     strategy:
+      fail-fast: false
       matrix:
+        # Both dimensions belong in the matrix itself. Listing the server
+        # versions under `include` made each entry overwrite the one before it
+        # for every Python version, so only the last one ever ran and the other
+        # three were advertised without being tested. The `include` entries
+        # below add the registry each version lives under: they name a version
+        # the matrix already has, so they match those combinations rather than
+        # replacing them.
         python-version:
           - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
+        clickhouse-version:
+          - 18.14.9
+          - 19.3.5
+          - 22.5.1.2079
+          - 23.8.4.69
         include:
           - clickhouse-version: 18.14.9
             clickhouse-org: yandex
