@@ -16,6 +16,29 @@ class Nested(types.TypeEngine):
         self._columns_dict = {col.name: col for col in columns}
         super(Nested, self).__init__()
 
+    def adapt(self, cls, **kw):
+        """Produce a new Nested type of class *cls* with the same children."""
+        if not issubclass(cls, Nested):
+            raise NotImplementedError(
+                "Nested type adaptation to %s is not supported" %
+                cls.__name__
+            )
+
+        try:
+            typ = cls(*self.columns)
+        except TypeError as exc:
+            raise NotImplementedError(
+                "Nested type adaptation to %s is not supported" %
+                cls.__name__
+            ) from exc
+        else:
+            typ._variant_mapping = self._variant_mapping
+            return typ
+
+    def copy(self, **kw):
+        """Return an independent copy of this Nested type."""
+        return self.adapt(self.__class__)
+
     class Comparator(UserDefinedType.Comparator):
         def __getattr__(self, key):
             str_key = key.rstrip("_")
@@ -24,18 +47,21 @@ class Nested(types.TypeEngine):
             except KeyError:
                 raise AttributeError(key)
             else:
-                original_type = sub.type
-                try:
-                    sub.type = Array(sub.type)
-                    expr = NestedColumn(self.expr, sub)
-                    return expr
-                finally:
-                    sub.type = original_type
+                sub = sub._copy()
+                sub.type = Array(sub.type)
+                return NestedColumn(self.expr, sub)
 
     comparator_factory = Comparator
 
 
 class NestedColumn(ColumnClause):
+    """A dotted reference such as ``table.nested.child``.
+
+    NestedColumn depends on the parent expression plus a synthetic Array
+    child type, so it opts out of SQLAlchemy's generic cache inheritance.
+    """
+    inherit_cache = False
+
     def __init__(self, parent, sub_column):
         self.parent = parent
         self.sub_column = sub_column

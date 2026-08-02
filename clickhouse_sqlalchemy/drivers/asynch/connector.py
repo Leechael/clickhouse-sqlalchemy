@@ -1,8 +1,36 @@
 import asyncio
 import inspect
-
 from sqlalchemy.engine.interfaces import AdaptedConnection
 from sqlalchemy.util.concurrency import await_only
+
+from ..util import strip_pyformat_insert_values_template
+
+
+def _strip_pyformat_values_template(operation, params, context=None):
+    """Truncate the VALUES clause template before ``executemany()``.
+
+    The asynch driver builds value tuples internally when given a list
+    of parameter dicts.  If we leave the ``VALUES (%(col)s)`` template
+    in the statement, asynch tries to bind the list as a single
+    parameter and fails.  Removing the exact values tuple lets asynch
+    generate the value rows itself while still receiving the column list
+    from the preceding ``INSERT INTO ... (cols) VALUES`` part.
+    """
+    if not isinstance(params, (list, tuple)):
+        return operation, params
+
+    try:
+        values_template = context.compiled._clickhouse_insert_values_template
+    except AttributeError:
+        return operation, params
+
+    if values_template is None:
+        return operation, params
+
+    return (
+        strip_pyformat_insert_values_template(operation, values_template),
+        params,
+    )
 
 
 class AsyncAdapt_asynch_cursor:
@@ -105,6 +133,9 @@ class AsyncAdapt_asynch_cursor:
 
     async def _executemany_async(self, operation, params, context):
         async with self._execute_mutex:
+            operation, params = _strip_pyformat_values_template(
+                operation, params, context=context
+            )
             return await self._cursor.executemany(
                 operation,
                 args=params,

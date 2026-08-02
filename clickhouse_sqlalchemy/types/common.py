@@ -77,6 +77,13 @@ class Nullable(ClickHouseTypeEngine):
 class UUID(String):
     __visit_name__ = 'uuid'
 
+    def literal_processor(self, dialect):
+        string_processor = types.String().literal_processor(dialect)
+
+        def process(value):
+            return string_processor(str(value))
+        return process
+
 
 class LowCardinality(ClickHouseTypeEngine):
     __visit_name__ = 'lowcardinality'
