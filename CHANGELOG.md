@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+### Changed
+- [ci] The build matrix now runs one job against a ClickHouse server that is not on UTC (`TZ=Asia/Shanghai`, on the newest Python and server it carries). Every other job runs a UTC server, so a test that pins a server-rendered `DateTime` to a constant passed everywhere and would only fail for users elsewhere.
 
 ## [0.3.3rc2] - 2026-07-26
 ### Changed
