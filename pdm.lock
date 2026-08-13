@@ -5,7 +5,7 @@
 groups = ["default", "coverage", "docs", "lint", "test"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:f945736d2d22496e710d7e4856e420f17dfab4eb3cfcd13a101cc5b0573b927a"
+content_hash = "sha256:32cdae29083a73a772b1e9cb60c418d02c24c8634e4b9cc27453d4b684050bd1"
 
 [[metadata.targets]]
 requires_python = "~=3.9"
@@ -40,11 +40,11 @@ files = [
 
 [[package]]
 name = "asynch"
-version = "0.4.0rc3"
+version = "0.4.0rc4"
 requires_python = ">=3.9,<4.0"
 git = "https://github.com/Leechael/asynch.git"
-ref = "v0.4.0rc3"
-revision = "9f5d4c9beda430f366e3811b8d92b49e7f0a7f10"
+ref = "9ae29c41b151bf1dc223973c18d2c3f801e98d90"
+revision = "9ae29c41b151bf1dc223973c18d2c3f801e98d90"
 summary = "An asyncio driver for ClickHouse with native TCP support"
 groups = ["default"]
 dependencies = [
