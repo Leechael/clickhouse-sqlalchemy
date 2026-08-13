@@ -1,7 +1,11 @@
 # Changelog
 
 ## [Unreleased]
+
+## [0.3.3rc3] - 2026-08-14
 ### Changed
+- [asynch] Pin the driver dependency to [v0.4.0rc4](https://github.com/Leechael/asynch/releases/tag/v0.4.0rc4). A connection whose socket has already broken no longer costs the process every connection after it. `Connection.close()` now clears its open and closed flags in a `finally`, so a `disconnect()` that raises on a dead socket leaves the object reporting itself closed instead of still open. The protocol-level `disconnect()` resets its wire state in a `finally` as well, which is the part that restores reconnection: `connect()` disconnects first whenever it still believes it is connected, so before this a single failing `writer.close()` was replayed on every later attempt and no further connection could be opened until the process was restarted. This dialect is the reason that path is reached at all, since it implements `is_disconnect()` and SQLAlchemy therefore invalidates and closes a pooled connection after a network error.
+- [packaging] The `asynch` dependency is pinned by commit hash rather than by git tag. A tag can be moved to a different commit, so a build that resolves one is not reproducible, and a consumer that validates the git references it builds from cannot see a tag carried in a dependency's own metadata.
 - [ci] The build matrix now runs one job against a ClickHouse server that is not on UTC (`TZ=Asia/Shanghai`, on the newest Python and server it carries). Every other job runs a UTC server, so a test that pins a server-rendered `DateTime` to a constant passed everywhere and would only fail for users elsewhere.
 
 ## [0.3.3rc2] - 2026-07-26
@@ -377,7 +381,8 @@ Log, TinyLog, Null.
 - Chunked `INSERT INTO` in one request.
 - Engines: MergeTree, CollapsingMergeTree, SummingMergeTree, Buffer, Memory.
 
-[Unreleased]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.3rc2...HEAD
+[Unreleased]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.3rc3...HEAD
+[0.3.3rc3]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.3rc2...0.3.3rc3
 [0.3.3rc2]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.3rc1...0.3.3rc2
 [0.3.3rc1]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.2...0.3.3rc1
 [0.3.2]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.1...0.3.2

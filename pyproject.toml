@@ -4,7 +4,7 @@ build-backend = "pdm.backend"
 
 [project]
 name = "clickhouse-sqlalchemy"
-version = "0.3.3rc2"
+version = "0.3.3rc3"
 description = "Simple ClickHouse SQLAlchemy Dialect"
 readme = "README.rst"
 requires-python = ">=3.9,<4"
@@ -40,7 +40,7 @@ dependencies = [
     "SQLAlchemy>=2.0.0,<2.1.0",
     "requests",
     "clickhouse-driver>=0.1.2",
-    "asynch @ git+https://github.com/Leechael/asynch.git@v0.4.0rc3",
+    "asynch @ git+https://github.com/Leechael/asynch.git@9ae29c41b151bf1dc223973c18d2c3f801e98d90",
 ]
 
 [project.urls]
