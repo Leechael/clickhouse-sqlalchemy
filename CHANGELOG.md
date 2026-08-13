@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+### Changed
+- [ci] The build matrix now runs one job against a ClickHouse server that is not on UTC (`TZ=Asia/Shanghai`, on the newest Python and server it carries). Every other job runs a UTC server, so a test that pins a server-rendered `DateTime` to a constant passed everywhere and would only fail for users elsewhere.
 
 ## [0.3.3rc2] - 2026-07-26
 ### Changed
@@ -8,6 +10,9 @@
 - [ci] The ClickHouse version matrix now runs every server it lists. It previously collapsed to a single one, so only 23.8 was ever exercised. The two servers that predate `DateTime64` are gone, since the suite cannot pass against them, and the verified floor is now 22.5.
 
 ## [0.3.3rc1] - 2026-07-12
+### Changed
+- [asynch] Set `join_use_nulls` to 1 on every connection the dialect opens, unless the caller already set it. ClickHouse fills an unmatched `LEFT JOIN` column with the column type's default, so a missing row reads back as 0 for a number and as the epoch for a `DateTime64`, and it cannot be told apart from a row that really holds those values. SQLAlchemy's ORM decides a relationship is absent by looking for NULL, so it needs the setting to read such a join correctly. This changes the result of every `LEFT JOIN` run over an asynch connection that does not set `join_use_nulls` itself.
+
 ### Fixed
 - [asynch] SQLAlchemy 2.0.44+ compatibility: implement async cursor soft close hook (`_async_soft_close`). Solves issue [#393](https://github.com/xzkostyan/clickhouse-sqlalchemy/issues/393).
 - [asynch] Pin the driver dependency to [v0.4.0rc2](https://github.com/Leechael/asynch/releases/tag/v0.4.0rc2).

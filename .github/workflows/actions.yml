@@ -46,19 +46,45 @@ jobs:
         clickhouse-version:
           - 22.5.1.2079
           - 23.8.4.69
+        # A single value, so this dimension does not multiply the matrix. It is
+        # here rather than only in `include` because of the rule the comment
+        # above describes from the other side: an `include` entry is folded into
+        # the combinations it matches unless it would overwrite an original
+        # matrix value, in which case it is added as a new combination. Declaring
+        # the timezone here makes `Asia/Shanghai` below an overwrite, so it adds
+        # a ninth job. Leaving it out would make `timezone` an unknown key that
+        # attaches itself to the existing 3.12 / 23.8 job, trading that UTC run
+        # away instead of adding to it.
+        timezone:
+          - UTC
         include:
           - clickhouse-version: 22.5.1.2079
             clickhouse-org: clickhouse
           - clickhouse-version: 23.8.4.69
             clickhouse-org: clickhouse
+          # A server that is not on UTC, on the newest Python and server the
+          # matrix carries. ClickHouse renders a DateTime default in its own
+          # timezone and the driver parses it as a naive value, so a test that
+          # pins such a value to a constant only passes where the server happens
+          # to run UTC. Every job above runs UTC, so nothing here would notice.
+          # `clickhouse-org` is repeated rather than inherited: entries added by
+          # `include` are not matched by other `include` entries.
+          # The runner stays on UTC, which is the point. Client and server
+          # disagreeing about the zone is the case that breaks.
+          - python-version: "3.12"
+            clickhouse-version: 23.8.4.69
+            clickhouse-org: clickhouse
+            timezone: Asia/Shanghai
     services:
       clickhouse-server:
         image: ${{ matrix.clickhouse-org }}/clickhouse-server:${{ matrix.clickhouse-version }}
+        env:
+          TZ: ${{ matrix.timezone }}
         ports:
           - 8123:8123
           - 9000:9000
 
-    name: ${{ matrix.python-version }} CH=${{ matrix.clickhouse-version }}
+    name: ${{ matrix.python-version }} CH=${{ matrix.clickhouse-version }} TZ=${{ matrix.timezone }}
     steps:
       - uses: actions/checkout@v6
       - name: Set up Python

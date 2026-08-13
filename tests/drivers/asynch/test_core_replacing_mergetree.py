@@ -1,5 +1,17 @@
 from tests.drivers.asynch._core_query_helpers import *  # noqa: F403
 
+# The two points below are written as naive datetimes an hour apart across
+# midnight, and read back through toTimeZone(..., 'Asia/Taipei') expecting a
+# single Taipei day. ClickHouse resolves a naive value against the column
+# type's timezone, which defaults to the server's own, so on a server that is
+# not on UTC the two instants land on two different Taipei days and the
+# assertion fails for a reason that has nothing to do with the query under
+# test. Naming the timezone on the column fixes the instants the test writes,
+# so the assertion keeps testing the conversion rather than where the server
+# happens to run.
+POINT_TIMESTAMP_TYPE = "DateTime64(3, 'UTC')"
+
+
 @pytest.mark.asyncio
 async def test_replacing_mergetree_union_watermarks_and_timezone_queries():
     point_table = _table_name("health_point")
@@ -25,7 +37,7 @@ async def test_replacing_mergetree_union_watermarks_and_timezone_queries():
                     f"""
                     CREATE TABLE {point_table} (
                         device_id String,
-                        timestamp DateTime64(3),
+                        timestamp {POINT_TIMESTAMP_TYPE},
                         value Float64,
                         motion_context Nullable(Int32),
                         source Nullable(String),

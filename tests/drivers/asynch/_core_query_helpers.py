@@ -86,15 +86,23 @@ def _uuid(index=1):
     return f"00000000-0000-4000-8000-{index:012d}"
 
 
-def _engine():
+def _engine(settings=None):
+    """Build an async engine against the test server.
+
+    ``settings`` is merged over the defaults every test needs, so a test that
+    cares about one particular ClickHouse setting can name just that one.
+    """
+
+    connect_settings = {
+        "async_insert": 1,
+        "wait_for_async_insert": 1,
+    }
+    if settings:
+        connect_settings.update(settings)
+
     return create_async_engine(
         _clickhouse_url(),
-        connect_args={
-            "settings": {
-                "async_insert": 1,
-                "wait_for_async_insert": 1,
-            },
-        },
+        connect_args={"settings": connect_settings},
     )
 
 
