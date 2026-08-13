@@ -99,7 +99,7 @@ def test_connect_preserves_explicit_join_use_nulls():
 MATCHED_ID = 1
 UNMATCHED_ID = 2
 SEEN_AT = datetime(2026, 1, 1, 0, 0, 0, 500000)
-EPOCH = datetime(1970, 1, 1, 0, 0, 0)
+SEEN_AT_TYPE = "DateTime64(3)"
 
 LEFT_JOIN = """
     SELECT
@@ -110,6 +110,25 @@ LEFT_JOIN = """
     LEFT JOIN {right} AS r ON l.id = r.id
     ORDER BY l.id
 """
+
+
+async def _type_default(conn, type_name):
+    """Read a column type's default value back from the server.
+
+    ClickHouse renders a ``DateTime64`` default in the server's own timezone
+    and the driver parses it as a naive value, so a server that is not on UTC
+    hands back something other than midnight. Asking the same connection for
+    the same type's default keeps the expectation tied to the server the test
+    is talking to, instead of to a constant that only holds on a UTC server.
+    """
+
+    row = (
+        await conn.execute(
+            text("SELECT defaultValueOfTypeName(:type_name)"),
+            {"type_name": type_name},
+        )
+    ).one()
+    return row[0]
 
 
 async def _seed(conn, left, right):
@@ -131,7 +150,7 @@ async def _seed(conn, left, right):
             CREATE TABLE {right} (
                 id UInt64,
                 amount UInt32,
-                seen_at DateTime64(3)
+                seen_at {SEEN_AT_TYPE}
             )
             ENGINE = MergeTree
             ORDER BY id
@@ -226,7 +245,7 @@ async def test_unmatched_left_join_row_reads_back_as_type_default_when_off():
 
             assert unmatched.id == UNMATCHED_ID
             assert unmatched.amount == 0
-            assert unmatched.seen_at == EPOCH
+            assert unmatched.seen_at == await _type_default(conn, SEEN_AT_TYPE)
     finally:
         await _drop(engine, left)
         await _drop(engine, right)
