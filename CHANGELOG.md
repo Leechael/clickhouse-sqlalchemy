@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.3.3rc4] - 2026-09-26
+### Changed
+- [asynch] Pin the driver dependency to [v0.4.0rc5](https://github.com/Leechael/asynch/releases/tag/v0.4.0rc5), by commit hash.
+  - Settings in the URL reach the server again. This dialect always passes a `settings` connect argument, because it injects `join_use_nulls`. Under asynch rc1 to rc4 that replaced every setting parsed from the DSN, so a URL such as `clickhouse+asynch://.../db?async_insert=0` was silently ignored. asynch now merges `settings` key by key: an explicit setting, including the injected `join_use_nulls`, still wins over the same key in the URL.
+  - A pooled connection survives a move to another event loop. SQLAlchemy's pool can hand a connection to a loop other than the one it connected on, for example when Celery tasks each run under a fresh `async_to_sync` loop. The driver's ping then touched a closed loop, and its cleanup failed the query with `RuntimeError: Event loop is closed`. It now reconnects transparently.
+  - A server-announced `session_timezone` no longer outlives the statement it arrived with. Before, it went on shifting later `DateTime` reads on that pooled connection.
+
 ## [0.3.3rc3] - 2026-08-14
 ### Changed
 - [asynch] Pin the driver dependency to [v0.4.0rc4](https://github.com/Leechael/asynch/releases/tag/v0.4.0rc4). A connection whose socket has already broken no longer costs the process every connection after it. `Connection.close()` now clears its open and closed flags in a `finally`, so a `disconnect()` that raises on a dead socket leaves the object reporting itself closed instead of still open. The protocol-level `disconnect()` resets its wire state in a `finally` as well, which is the part that restores reconnection: `connect()` disconnects first whenever it still believes it is connected, so before this a single failing `writer.close()` was replayed on every later attempt and no further connection could be opened until the process was restarted. This dialect is the reason that path is reached at all, since it implements `is_disconnect()` and SQLAlchemy therefore invalidates and closes a pooled connection after a network error.
@@ -381,7 +388,8 @@ Log, TinyLog, Null.
 - Chunked `INSERT INTO` in one request.
 - Engines: MergeTree, CollapsingMergeTree, SummingMergeTree, Buffer, Memory.
 
-[Unreleased]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.3rc3...HEAD
+[Unreleased]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.3rc4...HEAD
+[0.3.3rc4]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.3rc3...0.3.3rc4
 [0.3.3rc3]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.3rc2...0.3.3rc3
 [0.3.3rc2]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.3rc1...0.3.3rc2
 [0.3.3rc1]: https://github.com/xzkostyan/clickhouse-sqlalchemy/compare/0.3.2...0.3.3rc1
