@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.3.3rc5] - 2026-11-16
+### Fixed
+- [HTTP] Render integer and float subclasses as numeric values when escaping query parameters, even when they override string formatting. This applies to scalar parameters and nested containers; boolean output remains unchanged.
+- [packaging] Align the package's runtime version with its distribution version.
+
 ## [0.3.3rc4] - 2026-09-26
 ### Changed
 - [asynch] Pin the driver dependency to [v0.4.0rc5](https://github.com/Leechael/asynch/releases/tag/v0.4.0rc5), by commit hash.
