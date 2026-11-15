@@ -33,6 +33,14 @@ class Escaper(object):
             raise Exception("Unsupported param format: {}".format(parameters))
 
     def escape_number(self, item):
+        # Subclasses may override __str__/__format__, so normalize numeric
+        # values to their plain builtin representation. Keep bool as-is.
+        if isinstance(item, bool):
+            return item
+        if isinstance(item, int):
+            return int(item)
+        if isinstance(item, float):
+            return float(item)
         return item
 
     def escape_date(self, item):

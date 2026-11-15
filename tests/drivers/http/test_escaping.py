@@ -9,6 +9,26 @@ from clickhouse_sqlalchemy.drivers.http.escaper import Escaper
 from tests.testcase import HttpSessionTestCase
 
 
+class StrHijackingInt(int):
+    """int subclass whose string conversion is not a number."""
+
+    def __str__(self):
+        return 'hijacked'
+
+    def __format__(self, format_spec):
+        return 'hijacked'
+
+
+class StrHijackingFloat(float):
+    """float subclass whose string conversion is not a number."""
+
+    def __str__(self):
+        return 'hijacked'
+
+    def __format__(self, format_spec):
+        return 'hijacked'
+
+
 class EscapingTestCase(HttpSessionTestCase):
     def escaped_compile(self, clause, **kwargs):
         return str(self._compile(clause, **kwargs))
@@ -43,6 +63,45 @@ class EscapingTestCase(HttpSessionTestCase):
             e.escape('str')
 
         self.assertIn('Unsupported param format', str(ex.exception))
+
+    def test_escape_number_subclass(self):
+        e = Escaper()
+        self.assertEqual(e.escape([StrHijackingInt(1)]), '[1]')
+        self.assertEqual(e.escape([StrHijackingFloat(1.5)]), '[1.5]')
+
+    def test_escape_number_subclass_scalar_interpolation(self):
+        e = Escaper()
+        self.assertEqual(
+            'SELECT %(tid)s' % e.escape({'tid': StrHijackingInt(1)}),
+            'SELECT 1'
+        )
+        self.assertEqual(
+            'SELECT %(ratio)s' % e.escape({'ratio': StrHijackingFloat(0.5)}),
+            'SELECT 0.5'
+        )
+
+    def test_escape_number_subclass_nested_containers(self):
+        e = Escaper()
+        self.assertEqual(
+            e.escape([[StrHijackingInt(1), StrHijackingFloat(2.5)]]),
+            '[[1, 2.5]]'
+        )
+        self.assertEqual(e.escape([(StrHijackingInt(-3),)]), '[[-3]]')
+        self.assertEqual(
+            e.escape([{'a': StrHijackingInt(1)}]),
+            "[{'a': 1}]"
+        )
+
+    def test_escape_number_preserves_plain_values(self):
+        e = Escaper()
+        self.assertEqual(e.escape([1]), '[1]')
+        self.assertEqual(e.escape([0]), '[0]')
+        self.assertEqual(e.escape([-1]), '[-1]')
+        self.assertEqual(e.escape([1.0]), '[1.0]')
+        self.assertEqual(e.escape([-2.5]), '[-2.5]')
+        self.assertEqual(e.escape([2 ** 64 - 1]), '[18446744073709551615]')
+        self.assertEqual(e.escape([True]), '[True]')
+        self.assertEqual(e.escape([True, False]), '[True,False]')
 
     def test_escape_binary_mod(self):
         query = self.session.query(literal(1) % literal(2))
