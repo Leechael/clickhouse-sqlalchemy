@@ -9,7 +9,7 @@
   - Parse `use_client_time_zone=false` and `use_client_time_zone=0` in the connection URL as false.
 
 ### Known limitations
-- Aware parameters in `IN` against bare `DateTime` columns can raise ClickHouse Code 53; equality and `DateTime64(3)` membership were verified. This release does not change that existing driver behavior.
+- Aware parameters in `IN` against bare `DateTime` columns can raise ClickHouse Code 53. On ClickHouse 22.5/23.8, mixed-precision `DateTime64(3) IN (DateTime64(6))` can also return no match for the same instant. Align the column precision with the driver's microsecond parameters (`toDateTime64(column, 6) IN :values`); equality uses a different conversion path. These existing behaviors are not changed by this release.
 - SQLAlchemy's `literal_binds=True` renders aware datetimes as offset-bearing strings rather than the driver's typed bound values. These strings can raise Code 53 in timestamp comparisons; normal bound parameters use a different path.
 
 ## [0.3.3rc5] - 2026-11-16

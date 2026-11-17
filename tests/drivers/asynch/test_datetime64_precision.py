@@ -304,12 +304,48 @@ async def test_datetime_as_utc_decides_read_awareness(settings, query, aware):
             for where, value in (
                 ("dt = :v", row.dt),
                 ("dt64 = :v", row.dt64),
-                ("dt64 IN :v", (row.dt64, row.dt64)),
+                ("toDateTime64(dt64, 6) IN :v", (row.dt64, row.dt64)),
             ):
                 assert await _count(conn, table, where, value) == 1
+            assert await _count(
+                conn, table, "toDateTime64(dt64, 6) IN :v",
+                (row.dt64 + timedelta(milliseconds=1),),
+            ) == 0
     finally:
         async with engine.begin() as conn:
             await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@ENGINE_CASES
+async def test_datetime_as_utc_mixed_precision_in(settings, query, aware):
+    engine = _engine_with(settings, query)
+    column = "toDateTime64('2026-01-01 00:00:00.123', 3, 'UTC')"
+    try:
+        async with engine.connect() as conn:
+            value = MILLIS if aware else MILLIS.replace(tzinfo=None)
+            actual = (
+                await conn.execute(
+                    text(f"SELECT {column} IN :values"),
+                    {"values": (value,)},
+                )
+            ).scalar_one()
+            if aware and actual == 0:
+                # Confirm the server reproduces this without driver binding.
+                server_only = (
+                    await conn.execute(text(
+                        f"SELECT {column} IN "
+                        "(fromUnixTimestamp64Micro(1767225600123000))"
+                    ))
+                ).scalar_one()
+                if server_only == 0:
+                    pytest.xfail(
+                        "Server mixed-scale DateTime64 IN does not match; "
+                        "align the column and parameter precision"
+                    )
+            assert actual == 1
+    finally:
         await engine.dispose()
 
 
