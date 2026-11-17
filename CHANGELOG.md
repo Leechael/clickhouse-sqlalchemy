@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.3.3rc6] - 2026-11-17
+### Changed
+- [asynch] Pin the driver dependency to [v0.4.0](https://github.com/Leechael/asynch/releases/tag/v0.4.0), by commit hash.
+  - Opt into timezone-aware UTC reads for bare `DateTime` and `DateTime64` values with `connect_args={"settings": {"datetime_as_utc": True}}` or `?datetime_as_utc=true` in the connection URL. The default remains off; explicit column timezones and native writes are unchanged.
+  - Parse `use_client_time_zone=false` and `use_client_time_zone=0` in the connection URL as false.
+
+### Known limitations
+- Aware parameters in `IN` against bare `DateTime` columns can raise ClickHouse Code 53; equality and `DateTime64(3)` membership were verified. This release does not change that existing driver behavior.
+- SQLAlchemy's `literal_binds=True` renders aware datetimes as offset-bearing strings rather than the driver's typed bound values. These strings can raise Code 53 in timestamp comparisons; normal bound parameters use a different path.
+
 ## [0.3.3rc5] - 2026-11-16
 ### Changed
 - [asynch] Pin the driver dependency to [v0.4.0rc6](https://github.com/Leechael/asynch/releases/tag/v0.4.0rc6), by commit hash. Integer subclasses with custom string representations now render as numeric values in query parameters, including nested containers, while boolean output remains unchanged.
