@@ -190,7 +190,7 @@ class ClickHouseTypeCompiler(compiler.GenericTypeCompiler):
         ])
         if is_named_type:
             for nested_type in type_.nested_types:
-                name = nested_type[0]
+                name = self.dialect.identifier_preparer.quote(nested_type[0])
                 name_type = nested_type[1]
                 inner_type = self.process(
                     type_api.to_instance(name_type),

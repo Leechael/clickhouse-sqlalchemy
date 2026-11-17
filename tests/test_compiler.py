@@ -2,7 +2,6 @@ import enum
 from sqlalchemy import sql, Column, func, literal, literal_column, select, text
 
 from clickhouse_sqlalchemy import types, Table, engines
-from clickhouse_sqlalchemy.drivers.util import get_pyformat_insert_values_template
 from tests.testcase import CompilationTestCase, NativeSessionTestCase
 
 
@@ -20,6 +19,23 @@ class VisitTestCase(CompilationTestCase):
             self.compile(types.Array(types.Array(types.Int32()))),
             'Array(Array(Int32))'
         )
+
+    def test_reflected_named_tuple_quotes_identifiers(self):
+        dialect = self.session.bind.dialect
+        cases = (
+            (
+                'Tuple(`full name` String, value UInt32)',
+                'Tuple("full name" String, value UInt32)',
+            ),
+            (
+                'Tuple(`select` String, value UInt32)',
+                'Tuple("select" String, value UInt32)',
+            ),
+        )
+        for spec, expected in cases:
+            with self.subTest(spec=spec):
+                reflected = dialect._get_column_type('payload', spec)
+                self.assertEqual(self.compile(reflected), expected)
 
     def test_enum(self):
         class MyEnum(enum.Enum):
@@ -229,7 +245,7 @@ class NestedInsertPrefixTestCase(NativeSessionTestCase):
         self.assertIn(', ', sql)  # CTEs are comma-separated
 
     def test_no_cte_no_prefix_is_clean(self):
-        """Without CTE or prefix_with, INSERT must be clean (no regressions)."""
+        """Without CTE or prefix_with, INSERT must be clean."""
         stmt = self._nested_table().insert().values(
             n={'a': [1], 'b': ['hello']}
         )
