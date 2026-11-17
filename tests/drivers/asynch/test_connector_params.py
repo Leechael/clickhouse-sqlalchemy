@@ -44,7 +44,7 @@ class AsynchConnectorParamTestCase(TestCase):
 
         return Context()
 
-    def test_asynch_compiler_renders_execute_literals_with_sqlalchemy(self):
+    def test_asynch_compiler_leaves_text_params_for_driver(self):
         state = self._postcompile(
             text(
                 'SELECT * FROM events WHERE name = :name AND ts = :ts '
@@ -60,32 +60,56 @@ class AsynchConnectorParamTestCase(TestCase):
 
         self.assertEqual(
             state.statement,
-            "SELECT * FROM events WHERE name = 'O''Brien' "
+            'SELECT * FROM events WHERE name = %(name)s AND ts = %(ts)s '
+            'AND day = %(day)s AND id = %(id)s'
+        )
+        self.assertEqual(
+            ProtoConnection.substitute_params(
+                state.statement, state.parameters
+            ),
+            "SELECT * FROM events WHERE name = 'O\\'Brien' "
             "AND ts = '2026-01-02 03:04:05.000678' "
             "AND day = '2026-01-02' "
             "AND id = '00000000-0000-0000-0000-000000000001'"
         )
-        self.assertEqual(state.parameters, {})
+        self.assertEqual(state.parameters['name'], "O'Brien")
+        self.assertEqual(
+            state.parameters['ts'], datetime(2026, 1, 2, 3, 4, 5, 678)
+        )
+        self.assertEqual(state.parameters['day'], date(2026, 1, 2))
+        self.assertEqual(state.parameters['id'], UUID(int=1))
 
-    def test_asynch_compiler_renders_null_literals(self):
+    def test_asynch_compiler_keeps_null_params(self):
         state = self._postcompile(
             text('SELECT :value'),
             {'value': None}
         )
 
-        self.assertEqual(state.statement, 'SELECT NULL')
-        self.assertEqual(state.parameters, {})
+        self.assertEqual(state.statement, 'SELECT %(value)s')
+        self.assertEqual(state.parameters, {'value': None})
+        self.assertEqual(
+            ProtoConnection.substitute_params(
+                state.statement, state.parameters
+            ),
+            'SELECT NULL'
+        )
 
-    def test_asynch_compiler_renders_string_subclass_literals(self):
+    def test_asynch_compiler_keeps_string_subclass_params(self):
         state = self._postcompile(
             text('SELECT :database'),
             {'database': quoted_name('system', quote=True)}
         )
 
-        self.assertEqual(state.statement, "SELECT 'system'")
-        self.assertEqual(state.parameters, {})
+        self.assertEqual(state.statement, 'SELECT %(database)s')
+        self.assertIsInstance(state.parameters['database'], quoted_name)
+        self.assertEqual(
+            ProtoConnection.substitute_params(
+                state.statement, state.parameters
+            ),
+            "SELECT 'system'"
+        )
 
-    def test_asynch_compiler_renders_nested_container_literals(self):
+    def test_asynch_compiler_keeps_nested_container_params(self):
         state = self._postcompile(
             text('SELECT :empty_array, :empty_tuple, :payload'),
             {
@@ -101,17 +125,27 @@ class AsynchConnectorParamTestCase(TestCase):
 
         self.assertEqual(
             state.statement,
+            'SELECT %(empty_array)s, %(empty_tuple)s, %(payload)s'
+        )
+        self.assertEqual(
+            ProtoConnection.substitute_params(
+                state.statement, state.parameters
+            ),
             "SELECT [], (), "
-            "[['O''Brien', NULL], "
+            "[['O\\'Brien', NULL], "
             "('00000000-0000-0000-0000-000000000001', 7), "
             "['2026-01-02', '2026-01-02 03:04:05']]"
         )
-        self.assertEqual(state.parameters, {})
+        self.assertEqual(state.parameters['empty_array'], [])
+        self.assertEqual(state.parameters['empty_tuple'], ())
+        self.assertEqual(state.parameters['payload'][0], ["O'Brien", None])
 
-    def test_asynch_compiler_uses_type_decorator_processors(self):
+    def test_explicit_literal_execute_uses_type_decorator_processors(self):
         state = self._postcompile(
             text('SELECT :payload').bindparams(
-                bindparam('payload', type_=WrappedString())
+                bindparam(
+                    'payload', type_=WrappedString(), literal_execute=True
+                )
             ),
             {'payload': "O'Brien"}
         )
@@ -119,14 +153,16 @@ class AsynchConnectorParamTestCase(TestCase):
         self.assertEqual(state.statement, "SELECT 'wrapped:O''Brien'")
         self.assertEqual(state.parameters, {})
 
-    def test_asynch_compiler_rejects_unknown_literal_types(self):
+    def test_explicit_literal_execute_rejects_unknown_literal_types(self):
         class UnsafeValue(object):
             def __str__(self):
                 return "1); DROP TABLE events; --"
 
         with self.assertRaises(exc.CompileError):
             self._postcompile(
-                text('SELECT :value'),
+                text('SELECT :value').bindparams(
+                    bindparam('value', literal_execute=True)
+                ),
                 {'value': UnsafeValue()}
             )
 
@@ -179,8 +215,8 @@ class AsynchConnectorParamTestCase(TestCase):
         compiled = text(
             '-- note\nSELECT :x'
         ).compile(dialect=ClickHouseDialect_asynch())
-        # SELECT with comment should still take literal_execute path
-        self.assertNotEqual(compiled.literal_execute_params, frozenset())
+        self.assertEqual(compiled.string, '-- note\nSELECT %(x)s')
+        self.assertEqual(compiled.literal_execute_params, frozenset())
 
     def test_strip_pyformat_values_template_for_executemany(self):
         rows = [{'id': 1, 'payload': ['a']}]
@@ -585,10 +621,14 @@ class AsynchSubstitutionFidelityTestCase(TestCase):
             extra_params or {}, escape_names=False
         )
         state = compiled._process_parameters_for_postcompile(params)
+        processors = dict(compiled._bind_processors)
+        processors.update(state.processors)
+        driver_params = {
+            key: processors[key](value) if key in processors else value
+            for key, value in state.parameters.items()
+        }
         cursor = MagicMock()
-        self.dialect.do_execute(
-            cursor, state.statement, dict(state.parameters)
-        )
+        self.dialect.do_execute(cursor, state.statement, driver_params)
         return cursor.execute.call_args[0][0], cursor.execute.call_args[0][1]
 
     @staticmethod
@@ -604,6 +644,50 @@ class AsynchSubstitutionFidelityTestCase(TestCase):
             os.environ, {'ASYNCH_SUBSTITUTE_PARAMS_STYLE': 'pyformat'}
         ):
             return ProtoConnection.substitute_params(statement, params)
+
+    def test_text_backslashes_survive_driver_substitution(self):
+        value = r'C:\new\test'
+        sent_statement, sent_params = self._do_execute(
+            text('SELECT :value'), {'value': value}
+        )
+
+        self.assertEqual(
+            self._driver_substitute(sent_statement, sent_params),
+            r"SELECT 'C:\\new\\test'",
+        )
+        self.assertEqual(sent_statement, 'SELECT %(value)s')
+        self.assertEqual(sent_params, {'value': value})
+
+    def test_text_sql_payload_remains_escaped_data(self):
+        value = "\\' OR 1=1 --"
+        sent_statement, sent_params = self._do_execute(
+            text("SELECT 42 WHERE 'safe' = :value"), {'value': value}
+        )
+
+        self.assertEqual(
+            self._driver_substitute(sent_statement, sent_params),
+            r"SELECT 42 WHERE 'safe' = '\\\' OR 1=1 --'",
+        )
+        self.assertEqual(
+            sent_statement, "SELECT 42 WHERE 'safe' = %(value)s"
+        )
+        self.assertEqual(sent_params, {'value': value})
+
+    def test_text_bind_processor_runs_before_driver_escaping(self):
+        value = "\\' OR 1=1 --"
+        statement = text('SELECT :value').bindparams(
+            bindparam('value', type_=WrappedString())
+        )
+        sent_statement, sent_params = self._do_execute(
+            statement, {'value': value}
+        )
+
+        self.assertEqual(
+            self._driver_substitute(sent_statement, sent_params),
+            r"SELECT 'wrapped:\\\' OR 1=1 --'",
+        )
+        self.assertEqual(sent_statement, 'SELECT %(value)s')
+        self.assertEqual(sent_params, {'value': 'wrapped:' + value})
 
     def test_literal_braces_survive_driver_substitution(self):
         # A JSON string literal in the SQL text is a plain ClickHouse
@@ -633,10 +717,8 @@ class AsynchSubstitutionFidelityTestCase(TestCase):
         self.assertIn("'100%'", final)
         self.assertNotIn("'100%%'", final)
 
-    def test_text_select_brace_value_with_empty_params(self):
-        # text() binds are rendered inline via literal_execute, leaving
-        # an empty params dict.  asynch still applies pyformat for an
-        # empty dict, so braces from the rendered literal must pass through.
+    def test_text_select_brace_value_with_bound_params(self):
+        # Braces inside a bound value must pass through driver substitution.
         statement = text('SELECT count(*) FROM events WHERE payload = :j')
         sent_statement, sent_params = self._do_execute(
             statement, {'j': '{"k":1}'}
