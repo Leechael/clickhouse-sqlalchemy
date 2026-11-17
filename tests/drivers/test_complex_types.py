@@ -2,7 +2,8 @@ import enum
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
-from sqlalchemy import Column, MetaData, create_engine, literal, select
+from sqlalchemy import Column, MetaData, create_engine, literal, select, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.sql import type_api
 from sqlalchemy.sql.ddl import CreateTable
 
@@ -382,6 +383,77 @@ class FlattenedNestedInsertExecutionTestCase(TestCase):
         operation, parameters = mocked.call_args.args[:2]
         return operation, parameters
 
+    def test_flatten_nested_insert_preserves_escaped_bind_names(self):
+        table = Table(
+            'escaped_family', MetaData(),
+            Column('display name', types.String),
+            Column('nested field', types.Nested(Column('age', types.UInt8))),
+            engines.Memory(),
+        )
+        rows = [
+            {'display name': 'alice', 'nested field': {'age': [34]}},
+            {'display name': 'bob', 'nested field': {'age': [29]}},
+        ]
+        for execute in (
+            self._execute_with_http_cursor_patch,
+            self._execute_with_native_cursor_patch,
+        ):
+            with self.subTest(execute=execute.__name__):
+                statement, parameters = execute(
+                    'executemany', rows, insert_stmt=table.insert()
+                )
+                self.assertIn('"display name"', statement)
+                self.assertIn('"nested field".age', statement)
+                is_http = 'http' in execute.__name__
+                display_key = 'display_name' if is_http else 'display name'
+                self.assertEqual(parameters, [
+                    {display_key: 'alice', 'nested field.age': [34]},
+                    {display_key: 'bob', 'nested field.age': [29]},
+                ])
+                if is_http:
+                    self.assertIn('%(display_name)s', statement)
+                    statement % parameters[0]
+
+    def test_flatten_nested_insert_preserves_sql_expression_defaults(self):
+        table = Table(
+            'default_family', MetaData(),
+            Column('id', types.UInt32, default=text('42')),
+            Column('members', types.Nested(Column('age', types.UInt8))),
+            engines.Memory(),
+        )
+        for execute in (
+            self._execute_with_http_cursor_patch,
+            self._execute_with_native_cursor_patch,
+        ):
+            with self.subTest(execute=execute.__name__):
+                with patch.object(Connection, 'scalar', return_value=42):
+                    statement, parameters = execute(
+                        'executemany',
+                        [{'members': {'age': [34]}},
+                         {'members': {'age': [29]}}],
+                        insert_stmt=table.insert(),
+                    )
+                self.assertIn('(id, members.age)', statement)
+                self.assertEqual(parameters, [
+                    {'id': 42, 'members.age': [34]},
+                    {'id': 42, 'members.age': [29]},
+                ])
+
+    def test_flatten_nested_insert_does_not_replace_explicit_default(self):
+        table = Table(
+            'default_family', MetaData(),
+            Column('id', types.UInt32, default=text('42')),
+            Column('members', types.Nested(Column('age', types.UInt8))),
+            engines.Memory(),
+        )
+        with patch.object(Connection, 'scalar') as scalar:
+            _, parameters = self._execute_with_http_cursor_patch(
+                'execute', {'id': 7, 'members': {'age': [34]}},
+                insert_stmt=table.insert(),
+            )
+        scalar.assert_not_called()
+        self.assertEqual(parameters, {'id': 7, 'members.age': [34]})
+
     def test_flatten_nested_one_level_batch_insert_mapping_execution(self):
         rows = [
             {
@@ -550,7 +622,9 @@ class FlattenedNestedInsertExecutionTestCase(TestCase):
                         }
                     )
 
-    def test_unflattened_nested_mapping_payload_rejected_with_clear_error(self):
+    def test_unflattened_nested_mapping_payload_rejected_with_clear_error(
+        self,
+    ):
         with patch.object(
             ClickHouseDialect_http, '_get_server_version_info',
             return_value=(24, 8, 1)
@@ -988,7 +1062,9 @@ class NestedInsertColumnKeyUnitTestCase(TestCase):
 
     def test_expand_nested_row_finds_column_by_key(self):
         """Expansion must look up top-level nested column by column.key."""
-        row = {'plain_key': 'val', 'nest_key': {'a_name': [1], 'b_name': ['x']}}
+        row = {
+            'plain_key': 'val', 'nest_key': {'a_name': [1], 'b_name': ['x']},
+        }
         result, changed = ClickHouseDialect._expand_nested_insert_row(
             row, (self.nested_column,)
         )
@@ -1130,9 +1206,8 @@ class NestedInsertColumnKeyUnitTestCase(TestCase):
         ]
 
         # Should not raise — both rows have nest_key
-        ClickHouseExecutionContextBase._validate_nested_insert_parameter_groups(
-            FakeCompiled, parameters
-        )
+        (ClickHouseExecutionContextBase
+         ._validate_nested_insert_parameter_groups)(FakeCompiled, parameters)
 
     def test_validate_parameter_groups_raises_on_sparse_key(self):
         """Batch rows with different nested column presence must raise."""
@@ -1155,9 +1230,10 @@ class NestedInsertColumnKeyUnitTestCase(TestCase):
             'Every row in a batch INSERT must include the same '
             'Nested columns'
         ):
-            ClickHouseExecutionContextBase._validate_nested_insert_parameter_groups(
-                FakeCompiled, parameters
-            )
+            (ClickHouseExecutionContextBase
+             ._validate_nested_insert_parameter_groups)(
+                 FakeCompiled, parameters
+             )
 
     # -- Edge cases -------------------------------------------------------
 
@@ -1557,9 +1633,10 @@ class NestedInsertColumnCacheInvalidationTestCase(TestCase):
             'Every row in a batch INSERT must include the same '
             'Nested columns'
         ):
-            ClickHouseExecutionContextBase._validate_nested_insert_parameter_groups(
-                FakeCompiled, parameters
-            )
+            (ClickHouseExecutionContextBase
+             ._validate_nested_insert_parameter_groups)(
+                 FakeCompiled, parameters
+             )
 
 
 class FlattenNestedDisabledDetectionTestCase(TestCase):

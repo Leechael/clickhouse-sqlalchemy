@@ -3,7 +3,9 @@ import re
 import weakref
 from collections.abc import Mapping
 
-from sqlalchemy import schema, types as sqltypes, util as sa_util, text
+from sqlalchemy import (
+    schema, select, text, type_coerce, types as sqltypes, util as sa_util,
+)
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.sql import (
     compiler, elements, type_api
@@ -705,9 +707,10 @@ class ClickHouseDialect(default.DefaultDialect):
         if not all(isinstance(row, Mapping) for row in rows):
             return statement, parameters
 
+        bind_names = getattr(context.compiled, 'escaped_bind_names', {})
         if self._flatten_nested_disabled(context, cursor):
             if any(
-                column.key in row
+                bind_names.get(column.key, column.key) in row
                 for row in rows
                 for column in nested_columns
             ):
@@ -723,7 +726,7 @@ class ClickHouseDialect(default.DefaultDialect):
         changed = False
         for row in rows:
             expanded_row, row_changed = self._expand_nested_insert_row(
-                row, nested_columns
+                row, nested_columns, bind_names
             )
             changed = changed or row_changed
             expanded.append(expanded_row)
@@ -732,11 +735,43 @@ class ClickHouseDialect(default.DefaultDialect):
             return statement, parameters
 
         self._validate_expanded_nested_rows(expanded)
+        for column in table.columns:
+            default = column.default
+            bind_name = bind_names.get(column.key, column.key)
+            if (
+                default is None or not default.is_clause_element
+                or bind_name in expanded[0]
+            ):
+                continue
+
+            # Native batch inserts cannot carry inline SQL expressions.
+            # Evaluate client-side SQL defaults before sending flattened rows.
+            default_query = select(type_coerce(default.arg, column.type))
+            processor = column.type._cached_bind_processor(self)
+            for row in expanded:
+                value = context.root_connection.scalar(
+                    default_query, execution_options=context.execution_options
+                )
+                row[bind_name] = processor(value) if processor else value
+
         statement = self._render_flattened_nested_insert(
             table, expanded[0], insert_stmt,
-            include_values_template=self.renders_insert_values_template
+            include_values_template=self.renders_insert_values_template,
+            bind_names=bind_names,
         )
-        parameters = expanded if is_many else expanded[0]
+        driver_rows = expanded
+        if not self.renders_insert_values_template:
+            physical_names = {
+                bind_names.get(column.key, column.key): column.name
+                for column in table.columns
+                if not isinstance(column.type, types.Nested)
+            }
+            driver_rows = [
+                {physical_names.get(key, key): value
+                 for key, value in row.items()}
+                for row in expanded
+            ]
+        parameters = driver_rows if is_many else driver_rows[0]
 
         try:
             context.parameters = parameters
@@ -957,7 +992,7 @@ class ClickHouseDialect(default.DefaultDialect):
         return False
 
     @staticmethod
-    def _expand_nested_insert_row(row, nested_columns):
+    def _expand_nested_insert_row(row, nested_columns, bind_names=None):
         """Expand a Nested mapping to dotted keys for flatten_nested=1.
 
         Turns ``{'nested': {'child': [...]}}`` into
@@ -968,12 +1003,14 @@ class ClickHouseDialect(default.DefaultDialect):
         """
         expanded = dict(row)
         changed = False
+        bind_names = bind_names or {}
 
         for column in nested_columns:
-            if column.key not in expanded:
+            bind_name = bind_names.get(column.key, column.key)
+            if bind_name not in expanded:
                 continue
 
-            nested_value = expanded[column.key]
+            nested_value = expanded[bind_name]
             if isinstance(nested_value, (list, tuple)):
                 raise NotImplementedError(
                     "Row-oriented Nested payloads are not supported. For "
@@ -989,7 +1026,7 @@ class ClickHouseDialect(default.DefaultDialect):
                 )
 
             changed = True
-            expanded.pop(column.key)
+            expanded.pop(bind_name)
             child_names = {child.name for child in column.type.columns}
             provided_names = set(nested_value)
             extra_names = provided_names - child_names
@@ -1022,7 +1059,7 @@ class ClickHouseDialect(default.DefaultDialect):
         return expanded, changed
 
     def _render_flattened_nested_insert(
-        self, table, row, insert_stmt, include_values_template
+        self, table, row, insert_stmt, include_values_template, bind_names=None
     ):
         """Build the INSERT text with dotted Nested column names.
 
@@ -1033,6 +1070,7 @@ class ClickHouseDialect(default.DefaultDialect):
         preparer = self.identifier_preparer
         columns = []
         binds = []
+        bind_names = bind_names or {}
 
         for column in table.columns:
             if isinstance(column.type, types.Nested):
@@ -1054,9 +1092,10 @@ class ClickHouseDialect(default.DefaultDialect):
                     binds.append('%%(%s)s' % bind_name)
                 continue
 
-            if column.key in row:
+            bind_name = bind_names.get(column.key, column.key)
+            if bind_name in row:
                 columns.append(preparer.format_column(column))
-                binds.append('%%(%s)s' % column.key)
+                binds.append('%%(%s)s' % bind_name)
 
         cte_prefix, hint_prefix = self._render_insert_prefixes(insert_stmt)
         text = '%sINSERT%s INTO %s (%s) VALUES' % (

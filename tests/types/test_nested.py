@@ -1,7 +1,7 @@
 import ast
 from contextlib import contextmanager
 
-from sqlalchemy import Column, inspect, select, text
+from sqlalchemy import Column, inspect, literal, select, text
 
 from clickhouse_sqlalchemy import Table, engines, types
 from tests.testcase import BaseTestCase
@@ -138,6 +138,43 @@ class NestedTypeTestCase(BaseTestCase):
             ]
         )
 
+    def test_flatten_nested_insert_preserves_defaults_and_escaped_names(self):
+        table = self._nested_table()
+        table.append_column(Column('display name', types.String))
+        table.append_column(Column(
+            'default value', types.UInt32, default=text('42')
+        ))
+        table.append_column(Column(
+            'bound_default', types.UInt32, default=literal(43)
+        ))
+        rows = [
+            {
+                'id': i,
+                'display name': name,
+                'members': {'name': [name], 'age': [age]},
+            }
+            for i, name, age in [(1, 'alice', 34), (2, 'bob', 29)]
+        ]
+        with self._nested_connection(1) as connection:
+            table.drop(bind=connection, if_exists=True)
+            table.create(bind=connection)
+            try:
+                connection.execute(table.insert(), rows)
+                connection.execute(table.insert(), {
+                    'id': 3, 'display name': 'carol',
+                    'members': {'name': ['carol'], 'age': [41]},
+                    'default value': 7, 'bound_default': 8,
+                })
+                result = connection.execute(select(
+                    table.c.id, table.c['display name'],
+                    table.c['default value'], table.c.bound_default,
+                ).order_by(table.c.id)).fetchall()
+            finally:
+                table.drop(bind=connection)
+        self.assertEqual(result, [
+            (1, 'alice', 42, 43), (2, 'bob', 42, 43), (3, 'carol', 7, 8),
+        ])
+
     def test_flatten_nested_reflection_returns_array_subcolumns(self):
         table = self._nested_table()
 
@@ -220,7 +257,9 @@ class NestedTypeTestCase(BaseTestCase):
         self.assertEqual([column.name for column in nested_d.columns], ['e'])
         self.assertIsInstance(nested_d.columns[0].type, types.Date)
 
-    def test_native_session_set_flatten_nested_zero_rejects_mapping_insert(self):
+    def test_native_session_set_flatten_nested_zero_rejects_mapping_insert(
+        self,
+    ):
         if self.session.bind.dialect.driver != 'native':
             self.skipTest('session-level SET tracking is native-specific')
 
