@@ -7,6 +7,11 @@ from . import connector
 from ..base import (
     ClickHouseDialect, ClickHouseExecutionContextBase, ClickHouseSQLCompiler,
 )
+from ..util import (
+    get_pyformat_insert_values_template,
+    strip_pyformat_insert_values_template,
+    _pyformat_placeholder_re,
+)
 from sqlalchemy.engine.interfaces import ExecuteStyle
 from sqlalchemy import __version__ as sqlalchemy_version
 
@@ -23,7 +28,16 @@ class ClickHouseExecutionContext(ClickHouseExecutionContextBase):
         # Always do executemany on INSERT with VALUES clause.
         if (self.isinsert and self.compiled.statement.select is None and
                 self.parameters != [{}]):
-            self.execute_style = ExecuteStyle.EXECUTEMANY
+            # When _values() mixes SQL expressions with bound parameters,
+            # the VALUES template is intentionally not stored (the SQL
+            # keeps its pyformat placeholders for plain values while
+            # expressions are inline).  Stripping such a mixed template
+            # would lose the inline expressions.  Skip EXECUTEMANY and
+            # let the regular execute path handle the mixed statement.
+            if hasattr(
+                self.compiled, '_clickhouse_insert_values_template'
+            ):
+                self.execute_style = ExecuteStyle.EXECUTEMANY
 
 
 class ClickHouseNativeSQLCompiler(ClickHouseSQLCompiler):
@@ -32,17 +46,40 @@ class ClickHouseNativeSQLCompiler(ClickHouseSQLCompiler):
         rv = super(ClickHouseNativeSQLCompiler, self).visit_insert(
             insert_stmt, asfrom=asfrom, **kw)
 
-        if kw.get('literal_binds') or insert_stmt._values:
+        if kw.get('literal_binds'):
             return rv
 
-        pos = rv.lower().rfind('values (')
-        # Remove (%s)-templates from VALUES clause if exists.
+        if insert_stmt._values:
+            values_template = get_pyformat_insert_values_template(rv)
+            if (
+                values_template
+                and _pyformat_placeholder_re.sub(
+                    '', values_template
+                ).strip('(), \t')
+            ):
+                # VALUES template contains inline SQL expressions mixed
+                # with bound parameters (e.g. (now(), %(y)s)).  Do NOT
+                # store the template — if _executemany_async strips it,
+                # the inline expressions are lost while column names
+                # remain, causing asynch to raise KeyError on rebuild.
+                # The template attribute is left unset intentionally;
+                # pre_exec won't trigger EXECUTEMANY for this case,
+                # and the regular execute path handles the mixed SQL.
+                pass
+            else:
+                # Pure-pyformat template or no template at all.
+                # Store so asynch can strip and rebuild from params.
+                self._clickhouse_insert_values_template = values_template
+            return rv
+
+        values_template = get_pyformat_insert_values_template(rv)
+        self._clickhouse_insert_values_template = values_template
+
+        # Remove pyformat templates from VALUES clause if exists.
         # ClickHouse server since version 19.3.3 parse query after VALUES and
         # allows inplace parameters.
         # Example: INSERT INTO test (x) VALUES (1), (2).
-        if pos != -1:
-            rv = rv[:pos + 6]
-        return rv
+        return strip_pyformat_insert_values_template(rv, values_template)
 
 
 class ClickHouseDialect_native(ClickHouseDialect):
